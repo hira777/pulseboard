@@ -11,7 +11,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser()
 
   if (userError || !user) {
-    redirect('/auth/login')
+    redirect('/login')
   }
 
   const { data: profile } = await supabase
@@ -55,5 +55,5 @@ async function logout() {
   'use server'
   const supabase = await createSupabaseServerClient()
   await supabase.auth.signOut()
-  redirect('/auth/login')
+  redirect('/login')
 }

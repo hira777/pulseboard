@@ -4,7 +4,7 @@ export default function Home() {
       <h1>PulseBoard</h1>
       <ul>
         <li>
-          <a href="/auth/login">Login</a>
+          <a href="/login">Login</a>
         </li>
         <li>
           <a href="/dashboard">Dashboard</a>
