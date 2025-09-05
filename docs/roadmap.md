@@ -10,12 +10,23 @@
 
 ---
 
+## プロトタイプ（最小構成）TODO
+
+- [ ] profiles: RLS & トリガーを dev に適用
+- [ ] /dashboard: プロフィール編集フォーム（display_name 更新）
+- [ ] /shared/ws/connection.ts: 薄いインターフェース定義（内部は setInterval モック）
+- [ ] KPI カード（4 枚）と接続ステータスバナー
+- [ ] /admin: SSR で role チェック → member は 403
+- [ ] ダミー 10 万件を生成して仮想リスト描画（API は後で）
+- [ ] reportError(): console.error 実装（Sentry 導入は後で）
+
+---
+
 ## 直近 TODO
 
-- [ ] /dashboard: プロフィール編集フォーム
 - [ ] logout 後の UI 改善（フラッシュ表示）
 - [ ] admin/member で UI を出し分け
-- [ ] /admin: RBAC 実装
+- [ ] /admin: RBAC 実装強化
 - [ ] Server Action でのエラーハンドリング
 
 ---
