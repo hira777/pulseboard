@@ -1,19 +1,9 @@
-import { redirect } from 'next/navigation'
+import { requireUser, signOutAction } from '@/features/auth/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export default async function DashboardPage() {
+  const user = await requireUser()
   const supabase = await createSupabaseServerClient()
-
-  // ログイン中のユーザーを取得
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
-    redirect('/login')
-  }
-
   const { data: profile } = await supabase
     .from('profiles')
     .select('display_name, role')
@@ -44,16 +34,9 @@ export default async function DashboardPage() {
         </ul>
       </section>
 
-      <form action={logout} style={{ marginTop: 16 }}>
+      <form action={signOutAction} style={{ marginTop: 16 }}>
         <button type="submit">ログアウト</button>
       </form>
     </main>
   )
-}
-
-async function logout() {
-  'use server'
-  const supabase = await createSupabaseServerClient()
-  await supabase.auth.signOut()
-  redirect('/login')
 }
