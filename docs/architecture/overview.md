@@ -2,7 +2,7 @@
 
 ## スタック
 
-- Next.js 14 (App Router, TypeScript)
+- Next.js 15 (App Router, TypeScript)
 - Supabase (Auth / Postgres / RLS)
 - React Query（サーバ状態管理）
 - Zustand（UI 状態管理）
