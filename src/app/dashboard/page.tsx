@@ -1,9 +1,9 @@
 import { requireUser, signOutAction } from '@/features/auth/server'
+import { MetricsPanel } from '@/features/metrics/ui'
 import { updateDisplayNameAction } from '@/features/profile/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { FlashMessage } from '@/shared/ui'
 import { readFlash } from '@/shared/server/flash'
-import { MetricsPanel } from '@/features/metrics/ui'
+import { FlashMessage } from '@/shared/ui'
 
 export default async function DashboardPage() {
   const user = await requireUser()

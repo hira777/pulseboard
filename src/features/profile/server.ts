@@ -1,9 +1,10 @@
 'use server'
 
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
 import { getUser } from '@/features/auth/server'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { setFlash } from '@/shared/server/flash'
 
 export async function updateDisplayNameAction(formData: FormData) {

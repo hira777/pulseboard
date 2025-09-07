@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { wsClient } from '@/shared/ws/connection'
+
 import {
   startMetricsMock,
   stopMetricsMock,
   type MetricEvent,
   getWSStatus,
 } from '@/features/metrics/lib/metricsStream'
+import { wsClient } from '@/shared/ws/connection'
 import type { WSStatus } from '@/shared/ws/connection'
 
 export function MetricsPanel() {
