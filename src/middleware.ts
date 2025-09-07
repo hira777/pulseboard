@@ -40,15 +40,43 @@ export async function middleware(request: NextRequest) {
     },
   )
 
-  // セッションに紐づく JWT Claims（ユーザー情報やロールなど）を取得
-  // これを呼ぶことで Supabase が内部的にセッションを検証＆更新する
-  const { data } = await supabase.auth.getClaims()
-  const user = data?.claims
+  const pathname = request.nextUrl.pathname
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+  // /dashboard と /admin は要ログイン
+  if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
+    // ユーザー取得（必要に応じてSupabase が内部的にセッションを検証＆更新する）
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      const redirectResponse = NextResponse.redirect(url)
+      // middleware 内で更新された Cookie を引き継ぐ
+      for (const c of response.cookies.getAll()) redirectResponse.cookies.set(c)
+      return redirectResponse
+    }
+
+    // /admin は admin ロールのみ許可
+    if (pathname.startsWith('/admin')) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (!profile || profile.role !== 'admin') {
+        const html =
+          '<!doctype html><html lang="ja"><head><meta charSet="utf-8" /><title>403 Forbidden</title><meta name="viewport" content="width=device-width,initial-scale=1" /></head><body style="font-family:system-ui, sans-serif; padding:24px"><h1>403 – Forbidden</h1><p>このページは管理者（admin）のみがアクセス可能です。</p></body></html>'
+        const forbidden = new NextResponse(html, {
+          status: 403,
+          headers: { 'content-type': 'text/html; charset=UTF-8' },
+        })
+        for (const c of response.cookies.getAll()) forbidden.cookies.set(c)
+        return forbidden
+      }
+    }
   }
 
   // セッションが更新された Cookie を含むレスポンスを返す

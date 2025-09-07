@@ -9,6 +9,9 @@ export default function Home() {
         <li>
           <a href="/dashboard">Dashboard</a>
         </li>
+        <li>
+          <a href="/admin">Admin</a>
+        </li>
       </ul>
     </main>
   )
