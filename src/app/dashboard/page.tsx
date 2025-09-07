@@ -1,8 +1,9 @@
 import { requireUser, signOutAction } from '@/features/auth/server'
 import { updateDisplayNameAction } from '@/features/profile/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { FlashMessage } from '@/shared/ui/FlashMessage'
+import { FlashMessage } from '@/shared/ui'
 import { readFlash } from '@/shared/server/flash'
+import { MetricsPanel } from '@/features/metrics/ui'
 
 export default async function DashboardPage() {
   const user = await requireUser()
@@ -53,6 +54,8 @@ export default async function DashboardPage() {
           </li>
         </ul>
       </section>
+
+      <MetricsPanel />
 
       <section style={{ marginTop: 16 }}>
         <form action={updateDisplayNameAction} style={{ display: 'grid', gap: 12 }}>
