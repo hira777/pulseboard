@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { render403Html } from '@/shared/server/errors'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -67,8 +68,7 @@ export async function middleware(request: NextRequest) {
         .maybeSingle()
 
       if (!profile || profile.role !== 'admin') {
-        const html =
-          '<!doctype html><html lang="ja"><head><meta charSet="utf-8" /><title>403 Forbidden</title><meta name="viewport" content="width=device-width,initial-scale=1" /></head><body style="font-family:system-ui, sans-serif; padding:24px"><h1>403 – Forbidden</h1><p>このページは管理者（admin）のみがアクセス可能です。</p></body></html>'
+        const html = render403Html()
         const forbidden = new NextResponse(html, {
           status: 403,
           headers: { 'content-type': 'text/html; charset=UTF-8' },
