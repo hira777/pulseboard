@@ -6,7 +6,7 @@ import { test, expect, Page } from '@playwright/test'
  * 前提:
  * - Playwright の baseURL は playwright.config.ts の `use.baseURL` で指定
  * - 未ログイン → /login にリダイレクト（middleware）
- * - ログイン済みかつ profiles.role !== 'admin' → HTTP 403（middleware）
+ * - ログイン済みかつ profiles.role !== 'admin' → HTTP 404（存在秘匿ポリシー）
  * - admin → 200 OK でページ表示
  *
  * 環境変数（任意・ある場合のみ該当テストを実行）:
@@ -32,7 +32,7 @@ test.describe('/admin 認可', () => {
     await expect(page).toHaveURL(/\/login$/)
   })
 
-  test('member ユーザー -> 403', async ({ page }) => {
+  test('member ユーザー -> 404', async ({ page }) => {
     const email = process.env.E2E_MEMBER_EMAIL
     const password = process.env.E2E_MEMBER_PASSWORD
     // 資格情報が無ければスキップ（テスト環境に依存させない）
@@ -40,10 +40,10 @@ test.describe('/admin 認可', () => {
 
     await loginViaUI(page, String(email), String(password))
     const response = await page.goto('/admin')
-    // middleware が HTTP 403 を返すことを確認
-    expect(response?.status()).toBe(403)
-    // 返却HTMLに 403 表示が含まれる（簡易確認）
-    await expect(page.locator('h1, h2')).toHaveText(/403/i)
+    // middleware が HTTP 404 を返すことを確認（存在を秘匿）
+    expect(response?.status()).toBe(404)
+    // 返却HTMLに 404 表示が含まれる（簡易確認）
+    await expect(page.locator('h1, h2')).toHaveText(/404|Not Found/i)
   })
 
   test('admin ユーザー -> 200 で表示', async ({ page }) => {

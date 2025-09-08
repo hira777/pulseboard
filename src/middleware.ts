@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { render403Html } from '@/shared/server/errors'
+import { render404Html } from '@/shared/server/errors'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -68,13 +68,13 @@ export async function middleware(request: NextRequest) {
         .maybeSingle()
 
       if (!profile || profile.role !== 'admin') {
-        const html = render403Html()
-        const forbidden = new NextResponse(html, {
-          status: 403,
+        const html = render404Html()
+        const notFound = new NextResponse(html, {
+          status: 404,
           headers: { 'content-type': 'text/html; charset=UTF-8' },
         })
-        for (const c of response.cookies.getAll()) forbidden.cookies.set(c)
-        return forbidden
+        for (const c of response.cookies.getAll()) notFound.cookies.set(c)
+        return notFound
       }
     }
   }
