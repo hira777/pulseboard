@@ -42,3 +42,30 @@ export async function signOutAction() {
   await supabase.auth.signOut()
   redirect('/login')
 }
+
+/**
+ * 管理者（admin）権限を要求するヘルパー
+ * - 未ログイン時は requireUser() が /login にリダイレクト
+ * - ログイン済みで admin でない場合は 403 相当のエラーを投げる
+ *   - Server Action から呼ぶことを想定。呼び出し元でキャッチしてフラッシュ表示などに使えるよう
+ *     error.status = 403 を付与する。
+ *
+ * 返り値: 認証済みユーザー（admin のみ）
+ */
+export async function requireAdmin() {
+  const user = await requireUser()
+  const supabase = await createSupabaseServerClient()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (profile?.role !== 'admin') {
+    const err: any = new Error('Forbidden: admin only')
+    err.status = 403
+    throw err
+  }
+
+  return user
+}
