@@ -7,7 +7,14 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint --fix",
-    "fmt": "prettier --write ."
+    "fmt": "prettier --write .",
+    "postinstall": "playwright install",
+    "test": "pnpm test:e2e",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -24,6 +31,8 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
     "eslint-plugin-import": "^2.32.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@playwright/test": "^1.51.1",
+    "dotenv": "^16.4.5"
   }
 }
