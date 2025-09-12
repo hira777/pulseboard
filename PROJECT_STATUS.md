@@ -1,17 +1,29 @@
 # Project Status
 
-更新履歴: 2025-09-09 初稿
+- 更新履歴:
+  - 2025-09-12 フェーズ 1 完了
+  - 2025-09-09 初稿
 
 ## ✅ 完了（Confirmed Done）
 
 - RLS/制約の基本検証（admin/member 切替で許可/拒否を確認）
 - スキーマ初期案の確立（`schema.md`）
 
+### フェーズ 1: **RLS/制約の実証**
+
+- Supabase ローカル環境の起動・初期化（`runbook-rls.md` の通り）
+- 想定どおりの許可/拒否、`canceled` 重複対象外の挿入可否など
+
+`runbook-rls.md`で記載されていたテスト方法は手動の想定だったが、Jest で自動テストができるようにテスト環境を整備した。
+
+実行するテストは以下のファイル。
+
+- `tests/db/rls.test.ts`
+
+それに伴い`runbook-rls.md`は不要になったが、アーカイブとして残しておきたいので`docs/archives/`に移動した。
+
 ## 🚧 進行中（In Progress）
 
-- フェーズ 1: **RLS/制約の実証**
-  - Supabase ローカル環境の起動・初期化（`runbook-rls.md` の通り）
-  - 想定どおりの許可/拒否、`canceled` 重複対象外の挿入可否など
 - フェーズ 2: **/t/:tenantId ルーティング基盤**
   - layout 導入、admin/member のナビ差し替え、未権限は 404、API は 403
 - フェーズ 3: **可用枠 API v1**

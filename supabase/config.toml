@@ -1,0 +1,2 @@
+[studio]
+enabled = true # ローカル環境で Supabase Studio を起動する

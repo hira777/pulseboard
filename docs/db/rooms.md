@@ -24,8 +24,9 @@
 
 ---
 
-## インデックス
+## インデックス/制
 - 既定（PK のみ）。
+- UNIQUE 制約: `unique (tenant_id, name)`（同一テナント内で部屋名(name)の重複を禁止）
 
 ---
 
@@ -39,4 +40,3 @@
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

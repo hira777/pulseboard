@@ -1,0 +1,4 @@
+# pnpm で supabase をインストールしても利用できるようにする
+# 参考: https://github.com/supabase/cli/issues/3026
+onlyBuiltDependencies:
+  - supabase

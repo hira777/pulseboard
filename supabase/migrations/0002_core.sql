@@ -12,6 +12,36 @@ set search_path = public;
 
 
 -- Helper functions for RLS ----------------------------------------------------
+-- Tenancy ---------------------------------------------------------------------
+-- テナント（tenants）とテナント所属ユーザー（tenant_users）を管理します。
+-- 1ユーザーは複数テナントに所属可能。RBAC は role（'admin' | 'member'）で表現します。
+create table if not exists public.tenants (
+  -- id … テナントID（UUID）。gen_random_uuid() により生成。
+  id uuid primary key default gen_random_uuid(),
+  -- name … テナント表示名（必須）。
+  name text not null,
+  -- slug … 人間可読な短い識別子。UI/URL 用（任意・ユニーク）。
+  slug text unique,
+  -- created_at … 作成時刻。既定で現在時刻。
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.tenant_users (
+  -- tenant_id … 所属先テナント。テナント削除時は連鎖削除。
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  -- profile_id … auth.users.id への参照。ユーザー削除時は連鎖削除。
+  profile_id uuid not null references auth.users(id) on delete cascade,
+  -- role … RBACロール。'admin' or 'member' のみを許容。
+  role text not null default 'member' check (role in ('admin','member')),
+  -- created_at … 追加日時。
+  created_at timestamptz not null default now(),
+  -- PK … (tenant_id, profile_id) で一意（1ユーザー1テナントに一意な所属）。
+  primary key (tenant_id, profile_id)
+);
+
+alter table public.tenants enable row level security;
+alter table public.tenant_users enable row level security;
+
 -- RLS 判定用のヘルパー関数群。
 -- app_is_tenant_member: 認証ユーザーが対象テナントのメンバーであるかを判定。
 -- app_is_tenant_admin : 上記に加えて role='admin' であるかを判定。
@@ -46,35 +76,6 @@ as $$
   );
 $$;
 
--- Tenancy ---------------------------------------------------------------------
--- テナント（tenants）とテナント所属ユーザー（tenant_users）を管理します。
--- 1ユーザーは複数テナントに所属可能。RBAC は role（'admin' | 'member'）で表現します。
-create table if not exists public.tenants (
-  -- id … テナントID（UUID）。gen_random_uuid() により生成。
-  id uuid primary key default gen_random_uuid(),
-  -- name … テナント表示名（必須）。
-  name text not null,
-  -- slug … 人間可読な短い識別子。UI/URL 用（任意・ユニーク）。
-  slug text unique,
-  -- created_at … 作成時刻。既定で現在時刻。
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.tenant_users (
-  -- tenant_id … 所属先テナント。テナント削除時は連鎖削除。
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- profile_id … auth.users.id への参照。ユーザー削除時は連鎖削除。
-  profile_id uuid not null references auth.users(id) on delete cascade,
-  -- role … RBACロール。'admin' or 'member' のみを許容。
-  role text not null default 'member' check (role in ('admin','member')),
-  -- created_at … 追加日時。
-  created_at timestamptz not null default now(),
-  -- PK … (tenant_id, profile_id) で一意（1ユーザー1テナントに一意な所属）。
-  primary key (tenant_id, profile_id)
-);
-
-alter table public.tenants enable row level security;
-alter table public.tenant_users enable row level security;
 
 -- tenants テーブルの RLS ポリシー
 drop policy if exists tenants_select on public.tenants;
@@ -114,6 +115,9 @@ create table if not exists public.rooms (
   -- active … 予約対象として有効かどうか。
   active boolean not null default true
 );
+
+alter table public.rooms
+  add constraint rooms_tenant_id_name_key unique (tenant_id, name);
 
 create table if not exists public.services (
   -- id … サービス（メニュー）ID。
@@ -197,6 +201,45 @@ create table if not exists public.staff (
 );
 
 -- Reservations ----------------------------------------------------------------
+-- ===================================================================
+-- make_occupy_tstzrange
+-- 開始・終了日時、前後のバッファ、ステータスから占有時間帯を算出する関数。
+-- - draft / pending / confirmed / in_use の場合のみ占有時間帯を返す
+-- - それ以外のステータスは NULL を返す
+-- - tstzrange 型を返し、予約の重複判定やインデックスに利用する
+--
+-- ▼使用例
+--   select make_occupy_tstzrange(
+--     '2025-09-10 10:00+09'::timestamptz,  -- 開始
+--     '2025-09-10 11:00+09'::timestamptz,  -- 終了
+--     15,  -- 前バッファ 15分
+--     10,  -- 後バッファ 10分
+--     'confirmed'
+--   );
+--
+-- ▼返却例
+--   ["2025-09-10 09:45:00+09","2025-09-10 11:10:00+09")
+--
+--   ※ status が 'canceled' の場合は NULL
+-- ===================================================================
+create or replace function make_occupy_tstzrange(
+  p_start timestamptz,
+  p_end   timestamptz,
+  p_before_min int,
+  p_after_min  int,
+  p_status text
+) returns tstzrange
+language sql
+immutable
+as $$
+  select case when p_status in ('draft','pending','confirmed','in_use') then
+    tstzrange(
+      p_start - (p_before_min::int * interval '1 minute'),
+      p_end   + (p_after_min::int  * interval '1 minute'),
+      '[)'
+    )
+  else null end
+$$;
 -- 予約テーブル。time_range（生成列）に前後バッファを含む占有時間帯を保持します。
 -- ステータスが draft/pending/confirmed/in_use のときのみ重複判定の対象になります。
 create table if not exists public.reservations (
@@ -234,13 +277,7 @@ create table if not exists public.reservations (
   version int not null default 1,
   -- occupy only when the status blocks other bookings
   time_range tstzrange generated always as (
-    case when status in ('draft','pending','confirmed','in_use')
-      then tstzrange(
-        start_at - make_interval(mins => buffer_before_min),
-        end_at   + make_interval(mins => buffer_after_min),
-        '[)'
-      )
-      else null end
+    make_occupy_tstzrange(start_at, end_at, buffer_before_min, buffer_after_min, status)
   ) stored
 );
 
