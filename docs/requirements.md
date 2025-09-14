@@ -9,12 +9,13 @@
 - 時間: 既定 15 分刻み（将来 5/10/30 分へ切替可能）。
 - タイムゾーン: 店舗 TZ 固定（例: Asia/Tokyo）。
 
-## 2. ロール/RBAC（ページは 404 秘匿、API は 403）
+## 2. ロール/RBAC（ページは 404 秘匿、API/Actions は規約に従う）
 
 - admin: 全データ閲覧/編集、設定（営業時間/例外日/料金/機材/権限）。
 - member: 自部署/担当範囲の予約を閲覧・作成・更新（設定変更不可）。
 - 非許可 URL（/admin、予約詳細の直打ちなど）は HTTP 404（存在秘匿）。
-- 操作系 API/Server Action は HTTP 403（汎用メッセージ）。
+- ページ（App Router）: 未認証は `/login` へリダイレクト、未認可/不可視は 404（秘匿）。
+- API/Server Actions: 401（未認証）/403（権限不足）/404（不可視・不存在・所属外）を使い分け（詳細は「9.1.1」を参照）。
 - ロールは「テナント単位」。同一ユーザーが複数テナントに所属可能（`tenant_users(profile_id, tenant_id, role)`）。
 
 ### 2.1 テナント判定（推奨）
@@ -94,7 +95,7 @@
 - `assignEquipmentItems(tenant_id, reservation_id, item_ids[]) → ok`（貸出時個体割当）
 - `postMessage(tenant_id, reservation_id, body) → message`
   すべて `requireUser`。管理系は `requireAdmin`。
-  - ルーティングから取得: `/t/:tenantId` を信頼し、Server Action/API へ `tenant_id` を明示的に渡す。
+  - ルーティングから取得: `/t/:tenantId` を信頼し、Server Actions/API へ `tenant_id` を明示的に渡す。
 
 ## 10. UI/画面
 
@@ -176,14 +177,57 @@
 
 - Idempotency: 変更系は `Idempotency-Key`（ヘッダー）を受け付け、同一キー重送は重複作成を防止。
 - 楽観制御: 予約更新は `If-Match: <version>` 必須。版ずれは `409` と最新 `reservation` を返却。
-- エラー表現: `code`（機械判定用）/`message`（ユーザー表示）/`details`（フィールドエラー配列）。
+- エラー表現: `code`（機械判定用）/`message`（ユーザー表示）/`details`（フィールドエラー配列）/`correlationId`（監査・トラブルシュート用の相関 ID）。
   - 代表コード: `ROOM_CONFLICT`／`EQUIPMENT_STOCK_EXCEEDED`／`OUT_OF_BUSINESS_HOURS`／`BLACKOUT`／`VERSION_MISMATCH`。
-- リスト API: ページングは `cursor`（次ページトークン）と `limit`（最大 100）。
+- リスト API: ページングは `cursor`（次ページトークン）と `limit`（最大 100）。ただし可用枠 API（`listAvailability`）は 1 ページ n≤50 を厳守。
 - 共通クエリ: 期間は `from`/`to`（ISO8601, 店舗 TZ 基準）。
+
+### 9.1.1 認証・権限と HTTP ステータス規約（API/Server Actions に統一適用）
+
+- 適用範囲: Next.js API Routes と Server Actions に同一の意味論を適用する。ページは別規約（未認証リダイレクト、未認可/不可視は 404）。
+- 401 Unauthorized（未認証）: JWT（Supabase）不在/無効/期限切れ。
+  - API: `401` を返し `WWW-Authenticate: Bearer` を付与。
+  - Server Actions: `redirect("/login?from=...")` で扱う（意味論は 401）。
+- 403 Forbidden（権限不足/操作不許可）: 認証済みだがロール不許可、操作禁止期間、業務ポリシーにより拒否など。
+  - API: `403` を返す（ユーザー向け汎用文＋`code`、監査用 `correlationId`）。
+  - Server Actions: ドメイン例外（例: `ForbiddenError`）や `return { ok:false, status:403 }` で扱う。
+- 404 Not Found（不存在/不可視）: リソースが存在しない、RLS により不可視、または「所属外テナント」へのアクセス。
+  - API: `404` を返す（存在有無を示さない文面）。
+  - Server Actions: `notFound()` を用いる。
+- 400 Bad Request: 形式/必須不足/型不一致などの入力不備。
+- 409 Conflict: 予約の重複・在庫競合・楽観ロック（`If-Match` 版ずれ）。
+- RLS 整合: 参照系で 0 行（RLS 不可視）は 404 として扱う（docs/archives/runbook-rls.md の検証手順［アーカイブ］に従う。あわせて自動テスト `tests/db/rls.test.ts` を参照）。
+- テナント境界: 「所属外テナントアクセス」は秘匿のため 404（秘匿最優先）にする
+
+#### 使い分けの理由
+
+- 秘匿性: 404 を用いることでリソース/テナントの存在推測を困難化（列挙耐性）。
+- RLS 一貫性: DB レイヤの不可視（0 行）とアプリの 404 を一致させる。
+- UX/回復指針: 401=再ログイン、403=権限申請/管理者連絡、404=URL/選択見直しという行動が明確。
+- 監査・運用: ステータス別にメトリクスと相関 ID を集計し、原因切り分けを容易化。
+- キャッシュ/セキュリティ: 意味論に沿うことで CDN/ブラウザ/中間層の扱いが標準化（認証系は `private, no-store` を基本）。
+
+#### 401/403/404 比較表（要約）
+
+| ステータス       | 意味                | 代表条件                               | API 実装                         | Server Actions 実装         | ユーザー UI                      |
+| ---------------- | ------------------- | -------------------------------------- | -------------------------------- | --------------------------- | -------------------------------- |
+| 401 Unauthorized | 未認証              | JWT 不在/失効/改竄                     | 401 + `WWW-Authenticate: Bearer` | `redirect("/login")`        | サインイン要求                   |
+| 403 Forbidden    | 権限不足/操作不許可 | admin 専用操作、ロール不許可、禁止期間 | 403 + `{ code, correlationId }`  | `throw ForbiddenError` など | 権限不足の案内（申請/連絡）      |
+| 404 Not Found    | 不存在/不可視       | 他テナント・RLS 不可視・無効 ID        | 404                              | `notFound()`                | リンク切れ扱い（情報露出しない） |
+
+補足: 入力不備は 400、業務上の競合は 409（本プロジェクトでは重複/在庫/版ずれを 409 に統一）。
+
+#### 判定フロー（簡易）
+
+1. JWT 検証失敗 → 401
+2. `tenantId` が所属外 → 404（秘匿）
+3. 所属内だがロール/操作不許可 → 403
+4. 対象が RLS 不可視/存在しない → 404
+5. バリデーション失敗 → 400／業務衝突 → 409
 
 ## 10.1 画面/ルーティング定義（詳細）
 
-- 共通: すべての URL は `/t/:tenantId` 配下。未認可ページは 404（秘匿）、操作 API は 403（既定どおり）。
+- 共通: すべての URL は `/t/:tenantId` 配下。ページは「未認証=リダイレクト／未認可=404（秘匿）」、API/Server Actions は「401/403/404 の使い分け（9.1.1）」に従う。
 
 1. ダッシュボード
 

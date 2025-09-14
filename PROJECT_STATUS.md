@@ -61,5 +61,5 @@
 
 - 要件: `docs/requirements.md`
 - スキーマ: `docs/schema.md`
-- RLS 実証: `docs/runbook-rls.md`
+- RLS 実証: `docs/archives/runbook-rls.md `
 - ロードマップ: `docs/roadmap.md`

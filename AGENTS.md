@@ -58,9 +58,10 @@
 
 ## 9. 出力フォーマット（AI 応答期待）
 
-- **diff/patch** + 要約 + 影響範囲 + 検証手順（再現コマンド）を含める。
+- 要約 + 影響範囲 + 検証手順（再現コマンド）を含める。
 - 複数ファイル変更はファイルごとに目的と確認方法を列挙。
 - 参照根拠（`requirements.md`/`schema.md`/`runbook-rls.md`）の章・見出しを併記。
+- こちらがコミットメッセージの提案を求めた時は「-」などをそのままコピーできるように、コミットメッセージはプレーンなテキストで出力する。(マークダウン変換されないようにする)
 
 ## 10. テスト / 受け入れ（S1）
 
@@ -71,6 +72,6 @@
 
 - 要件: `docs/requirements.md`
 - スキーマ: `docs/schema.md`
-- RLS 実証: `docs/runbook-rls.md`
+- RLS 実証: `docs/archives/runbook-rls.md `
 - ロードマップ: `docs/roadmap.md`
 - Project Status: `AGENTS.md`
