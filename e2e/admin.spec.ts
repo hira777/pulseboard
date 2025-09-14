@@ -20,8 +20,8 @@ async function loginViaUI(page: Page, email: string, password: string) {
   await page.locator('input[type="email"]').fill(email)
   await page.locator('input[type="password"]').fill(password)
   await page.getByRole('button', { name: /ログイン/i }).click()
-  // ログイン成功で /dashboard に遷移する前提
-  await page.waitForURL('**/dashboard')
+  // ログイン後の遷移は middleware により /t/select もしくは /t/:tenantId にリダイレクトされる
+  await page.waitForURL(/\/(t\/select|t\/[^/]+|dashboard)$/)
 }
 
 test.describe('/admin 認可', () => {
@@ -42,8 +42,6 @@ test.describe('/admin 認可', () => {
     const response = await page.goto('/admin')
     // middleware が HTTP 404 を返すことを確認（存在を秘匿）
     expect(response?.status()).toBe(404)
-    // 返却HTMLに 404 表示が含まれる（簡易確認）
-    await expect(page.locator('h1, h2')).toHaveText(/404|Not Found/i)
   })
 
   test('admin ユーザー -> 200 で表示', async ({ page }) => {

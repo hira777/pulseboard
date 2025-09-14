@@ -3,9 +3,9 @@
 -- ローカル検証用なので最低限のカラムで直接投入。
 insert into auth.users (id, email)
 values
-  ('00000000-0000-0000-0000-000000000001', 'admin@example.com'),
-  ('00000000-0000-0000-0000-000000000002', 'member@example.com'),
-  ('00000000-0000-0000-0000-000000000003', 'member2@example.com')
+  ('00000000-0000-0000-0000-000000000001', 'db-admin-acme@example.com'),
+  ('00000000-0000-0000-0000-000000000002', 'db-member-acme@example.com'),
+  ('00000000-0000-0000-0000-000000000003', 'db-member-apex@example.com')
 on conflict (id) do nothing;
 
 -- プロフィール（public.profiles）

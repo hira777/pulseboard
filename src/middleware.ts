@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { render404Html } from '@/shared/server/errors'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -43,8 +42,18 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // /dashboard と /admin は要ログイン
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/admin')) {
+  // ルートと /dashboard は既定テナントへ誘導（Cookie が無ければ /t/select）
+  if (pathname === '/' || pathname === '/dashboard') {
+    const cookieTenant = request.cookies.get('tenant_id')?.value
+    const url = request.nextUrl.clone()
+    url.pathname = cookieTenant ? `/t/${cookieTenant}` : '/t/select'
+    const redirectResponse = NextResponse.redirect(url)
+    for (const c of response.cookies.getAll()) redirectResponse.cookies.set(c)
+    return redirectResponse
+  }
+
+  // /t/* と /admin は要ログイン
+  if (pathname.startsWith('/t') || pathname.startsWith('/admin')) {
     // ユーザー取得（必要に応じてSupabase が内部的にセッションを検証＆更新する）
     const {
       data: { user },
@@ -59,7 +68,7 @@ export async function middleware(request: NextRequest) {
       return redirectResponse
     }
 
-    // /admin は admin ロールのみ許可
+    // admin 未権限は __404 に rewrite（最終的に app/not-found.tsx へ合流）
     if (pathname.startsWith('/admin')) {
       const { data: profile } = await supabase
         .from('profiles')
@@ -68,13 +77,11 @@ export async function middleware(request: NextRequest) {
         .maybeSingle()
 
       if (!profile || profile.role !== 'admin') {
-        const html = render404Html()
-        const notFound = new NextResponse(html, {
-          status: 404,
-          headers: { 'content-type': 'text/html; charset=UTF-8' },
-        })
-        for (const c of response.cookies.getAll()) notFound.cookies.set(c)
-        return notFound
+        const url = request.nextUrl.clone()
+        url.pathname = '/__404'
+        const rewrite = NextResponse.rewrite(url)
+        for (const c of response.cookies.getAll()) rewrite.cookies.set(c)
+        return rewrite
       }
     }
   }
@@ -85,5 +92,5 @@ export async function middleware(request: NextRequest) {
 
 // middleware を適用するルートの設定
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
+  matcher: ['/', '/dashboard/:path*', '/admin/:path*', '/t/:path*'],
 }

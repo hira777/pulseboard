@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import * as dotenv from 'dotenv'
-dotenv.config({ path: '.env.local' })
+dotenv.config({ path: '.env.test' })
 // Playwright 設定ファイル
 // 環境変数:
 //   - E2E_BASE_URL: テスト対象のベースURL（既定: http://localhost:3000）

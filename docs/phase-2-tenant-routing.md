@@ -77,7 +77,29 @@
 3. Cookie `tenant_id=1111...111` 状態で `/` → `/t/1111...111` へ遷移。
 4. 所属テナント直リンク `/t/1111...111` → 200 で骨組み表示。
 
-`.env.local` に資格情報が無ければ `test.skip` でスキップ（既存方針に合わせる）。
+`.env.test` に資格情報が無ければ `test.skip` でスキップ（既存方針に合わせる）。
+
+補足:
+
+- ファイル: `e2e/tenant-routing.spec.ts`（新規）、`e2e/admin.spec.ts`（ログイン後の待機 URL を `/t/select|/t/:tenantId|/dashboard` に更新済み）。
+- シード前提: `supabase/seed.sql` のテナント ID 定数を利用
+  - 所属あり: `11111111-1111-1111-1111-111111111111`（Acme Studio）
+  - 所属なし: `11111111-1111-1111-1111-111111111112`（Apex Studio）
+- テスト用環境変数（`.env.test` 例）:
+
+```
+E2E_MEMBER_EMAIL=auth-member-acme@example.com
+E2E_MEMBER_PASSWORD=1111
+E2E_ADMIN_EMAIL=auth-admin-acme@example.com
+E2E_ADMIN_PASSWORD=1111
+TENANT_ID_STUDIO_A=11111111-1111-1111-1111-111111111111
+TENANT_ID_STUDIO_B=11111111-1111-1111-1111-111111111112
+```
+
+実行コマンド:
+
+- 画面なし: `pnpm test:e2e`
+- 画面表示: `pnpm test:e2e:headed`
 
 ---
 
@@ -93,6 +115,19 @@
 - 直リンク/ブックマークで `/t/:tenantId` 配下が開ける（所属外は 404）。
 - Cookie 既定テナントがあるとき `/` → `/t/:tenantId` に誘導、無ければ `/t/select` へ。
 - 操作系 API/Server Action で未権限は 403 を返せる（ヘルパーで担保）。
+
+---
+
+## 受け入れ基準チェックリスト（実施用）
+
+- [x] 未ログインで `/t/:tenantId` にアクセスすると `/login` にリダイレクトされる（middleware 経由）。
+- [x] ログイン済みで未所属テナントの `/t/:tenantId` は 404（秘匿）。
+- [x] 所属テナントの `/t/:tenantId` は 200 で表示され、見出し「Tenant Dashboard」を確認できる。
+- [x] Cookie `tenant_id` がある状態で `/` または `/dashboard` へアクセスすると `/t/:tenantId` に誘導される。Cookie が無い場合は `/t/select` に誘導される。
+- [x] `/t/select` で所属テナントを選ぶと、Server Action が Cookie `tenant_id` を設定し `/t/:tenantId` に遷移する。
+- [x] ページ（RSC/レイアウト）は `requireTenantMember`/`requireTenantAdmin` により権限不足でも 404 を返している（URL 直打ちで確認）。
+- [x] API/Server Action は `assertTenantRoleForApi` により未ログイン/未所属/権限不足で 403 を返す（サンプル Action/ハンドラで確認）。
+- [x] E2E `e2e/tenant-routing.spec.ts` がグリーン（必要な `E2E_*` を設定時）。
 
 ---
 
