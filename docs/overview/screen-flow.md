@@ -2,30 +2,30 @@
 
 本ページは主要画面と遷移の俯瞰図を提供します。
 
-UI 実装は Next.js App Router（/t/:tenantId 配下）を前提とします。
+UI 実装は Next.js App Router（/t/:slug 配下）を前提とします。
 
 ## 0. ポリシー
 
-- 直リンク可能: すべての画面は `/t/:tenantId/...` で直リンク/リロード可能
+- 直リンク可能: すべての画面は `/t/:slug/...` で直リンク/リロード可能
 - 認可: ページは未権限=404（秘匿）、API/Actions は未権限=403（要件 2 章, 9.1.1）
-- テナント切替: ヘッダーのスイッチャーで Cookie とパスを同期（`/t/:tenantId` へ）
+- テナント切替: ヘッダーのスイッチャーで Cookie とパスを同期（`/t/:slug` へ）
 
 ## 1. 主要画面（案）
 
 - `/login`（未認証時）
-- `/t/:tenantId` ダッシュボード
-- `/t/:tenantId/reservations` 予約一覧
-- `/t/:tenantId/reservations/calendar` カレンダー（`?view=week|day`）
-- `/t/:tenantId/reservations/new` 予約作成（モーダル/ドロワーでも可）
-- `/t/:tenantId/reservations/:id` 予約詳細（TBD: ドロワー連携、要件 15.1）
-- `/t/:tenantId/availability` 可用枠検索（条件パネル＋結果）
-- `/t/:tenantId/inventory` 機材（SKU 一覧）
-- `/t/:tenantId/inventory/:sku` SKU 詳細（個体割当は返却時）
-- `/t/:tenantId/rooms` 部屋一覧
-- `/t/:tenantId/services` サービス一覧
-- `/t/:tenantId/staff` スタッフ一覧
-- `/t/:tenantId/blackouts` 例外日管理
-- `/t/:tenantId/settings` 設定（営業時間/色/バッファ等）
+- `/t/:slug` ダッシュボード
+- `/t/:slug/reservations` 予約一覧
+- `/t/:slug/reservations/calendar` カレンダー（`?view=week|day`）
+- `/t/:slug/reservations/new` 予約作成（モーダル/ドロワーでも可）
+- `/t/:slug/reservations/:id` 予約詳細（TBD: ドロワー連携、要件 15.1）
+- `/t/:slug/availability` 可用枠検索（条件パネル＋結果）
+- `/t/:slug/inventory` 機材（SKU 一覧）
+- `/t/:slug/inventory/:sku` SKU 詳細（個体割当は返却時）
+- `/t/:slug/rooms` 部屋一覧
+- `/t/:slug/services` サービス一覧
+- `/t/:slug/staff` スタッフ一覧
+- `/t/:slug/blackouts` 例外日管理
+- `/t/:slug/settings` 設定（営業時間/色/バッファ等）
 
 ## 2. 遷移図（stateDiagram）
 

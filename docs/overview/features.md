@@ -5,7 +5,7 @@
 ## 0. 記法
 
 - タグ: `[S1]` 初期リリース最小, `[S2]` 次フェーズ以降, `[admin]` 管理者, `[member]` 一般メンバー
-- テナント境界: すべての画面は `/t/:tenantId/...` 配下。未権限はページ=404、API/Actions=403（要件 9.1.1）
+- テナント境界: すべての画面は `/t/:slug/...` 配下。未権限はページ=404、API/Actions=403（要件 9.1.1）
 
 ## 1. ダッシュボード
 
@@ -44,7 +44,7 @@
 ## 6. 認証・権限・監査
 
 - [S1] Supabase JWT 認証（admin/member）
-- [S1] RLS と URL テナント境界（`/t/:tenantId`）、未権限=404・API/Actions=403（要件 2章, 9.1.1）
+- [S1] RLS と URL テナント境界（`/t/:slug`）、未権限=404・API/Actions=403（要件 2章, 9.1.1）
 - [S1] 操作ログ（監査）と相関 ID 付与、エラー規約（Idempotency / If-Match / 409）
 
 ## 7. テレメトリ / 非機能（抜粋）
@@ -58,4 +58,3 @@
 
 - `docs/requirements.md`「受け入れ基準（S1）」および `docs/roadmap.md` のフェーズにマッピング。
 - E2E（Playwright）対象: 予約 CRUD／可用枠検索／ロール別アクセス。
-

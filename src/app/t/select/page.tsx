@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-import { assertTenantRoleForApi, getTenantMembership } from '@/features/auth/tenant'
+import { assertTenantRoleForApi, getTenantMembership, getTenantById } from '@/features/auth/tenant'
 import { requireUser } from '@/features/auth/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -12,7 +12,10 @@ export default async function SelectTenantPage() {
   const cookieTenant = cookieStore.get('tenant_id')?.value
   if (cookieTenant) {
     const mem = await getTenantMembership(cookieTenant)
-    if (mem) redirect(`/t/${cookieTenant}`)
+    if (mem) {
+      const resolved = await getTenantById(cookieTenant)
+      if (resolved) redirect(`/t/${resolved.slug}`)
+    }
   }
 
   const supabase = await createSupabaseServerClient()
@@ -32,7 +35,8 @@ export default async function SelectTenantPage() {
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 60, // 60日
     })
-    redirect(`/t/${tenantId}`)
+    const resolved = await getTenantById(tenantId)
+    redirect(`/t/${resolved?.slug ?? tenantId}`)
   }
 
   return (

@@ -1,16 +1,19 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { notFound } from 'next/navigation'
 
-import { requireTenantMember } from '@/features/auth/tenant'
+import { requireTenantMember, getTenantBySlug } from '@/features/auth/tenant'
 
 type Props = {
   children: ReactNode
-  params: Promise<{ tenantId: string }>
+  params: Promise<{ slug: string }>
 }
 
 export default async function TenantLayout({ children, params }: Props) {
-  const { tenantId } = await params
-  const membership = await requireTenantMember(tenantId)
+  const { slug } = await params
+  const resolved = await getTenantBySlug(slug)
+  if (!resolved) notFound()
+  const membership = await requireTenantMember(resolved.id)
   const isAdmin = membership.role === 'admin'
 
   return (
@@ -26,7 +29,7 @@ export default async function TenantLayout({ children, params }: Props) {
       >
         <strong>PulseBoard</strong>
         <nav style={{ display: 'flex', gap: 12 }}>
-          <Link href={`/t/${tenantId}`}>Dashboard</Link>
+          <Link href={`/t/${resolved.slug}`}>Dashboard</Link>
           {isAdmin && <Link href={`/admin`}>Admin</Link>}
         </nav>
       </header>

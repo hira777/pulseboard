@@ -25,10 +25,12 @@
 
 ### 2.1 テナント判定（推奨）
 
-- 方式: パスベース `/t/:tenantId` を正とする（深いリンク/SSR/キャッシュ分割に有利）。
+- 方式: パスベース `/t/:slug` を正とする（深いリンク/SSR/キャッシュ分割に有利）。
 - 既定選択: 直アクセス時はミドルウェアが Cookie `tenant_id` を参照して既定テナントへ誘導（未設定時はテナント選択画面）。
 - UI: ヘッダーにテナントスイッチャーを設置し、切替で Cookie とパスを同期。
 - RLS: DB は「所属テナントのみ」可視。アプリ側も必ず `tenant_id` で絞り込み。
+
+> 注記（ルーティング方針）: 本プロジェクトは URL のテナント識別子として slug を用います。`/t/:uuid` の直接アクセスはサポートしません（未所属/不存在と同様に秘匿扱い=404）。
 
 ## 3. 主要ユースケース
 
@@ -225,40 +227,40 @@
 #### 判定フロー（簡易）
 
 1. JWT 検証失敗 → 401
-2. `tenantId` が所属外 → 404（秘匿）
+2. パスの `slug` が所属外 → 404（秘匿）
 3. 所属内だがロール/操作不許可 → 403
 4. 対象が RLS 不可視/存在しない → 404
 5. バリデーション失敗 → 400／業務衝突 → 409
 
 ## 10.1 画面/ルーティング定義（詳細）
 
-- 共通: すべての URL は `/t/:tenantId` 配下。ページは「未認証=リダイレクト／未認可=404（秘匿）」、API/Server Actions は「401/403/404 の使い分け（9.1.1）」に従う。
+- 共通: すべての URL は `/t/:slug` 配下。ページは「未認証=リダイレクト／未認可=404（秘匿）」、API/Server Actions は「401/403/404 の使い分け（9.1.1）」に従う。
 
 1. ダッシュボード
 
-   - パス: `/t/:tenantId/`
+   - パス: `/t/:slug/`
    - 目的: 今日/週の KPI と最近の更新を俯瞰。
    - 権限: admin, member
    - 操作: 期間切替、ショートカット（予約作成/カレンダー/一覧）。
 
 2. カレンダー（週/日）
 
-   - パス: `/t/:tenantId/calendar/week`, `/t/:tenantId/calendar/day`
+   - パス: `/t/:slug/calendar/week`, `/t/:slug/calendar/day`
    - 目的: 部屋列での可視化、ドラッグ作成/リスケ。
    - 権限: admin, member
    - 操作: 予約の D&D 移動・リサイズ、詳細ドロワー起動、部屋/サービス/状態フィルタ。
-   - Deep link: `/t/:tenantId/calendar/week?reservationId=:id` で該当予約をフォーカス。
+   - Deep link: `/t/:slug/calendar/week?reservationId=:id` で該当予約をフォーカス。
 
 3. 可用枠検索
 
-   - パス: `/t/:tenantId/availability`
+   - パス: `/t/:slug/availability`
    - 目的: 条件から候補スロットを検索し予約作成へ。
    - 権限: admin, member
    - 操作: 期間/サービス/部屋/機材/スタッフ条件 → 候補表示 → 作成へ遷移。
 
 4. 予約一覧
 
-   - パス: `/t/:tenantId/reservations`
+   - パス: `/t/:slug/reservations`
    - 目的: 大量データの検索・運用。
    - 権限: admin, member
    - 操作: サーバフィルタ/ソート、仮想スクロール、CSV エクスポート（将来）。
@@ -266,69 +268,69 @@
 
 5. 予約作成（ウィザード/モーダル）
 
-   - パス: `/t/:tenantId/reservations/new`
+   - パス: `/t/:slug/reservations/new`
    - 目的: サービス → 日時 → 部屋 → 機材 → 顧客 → 確認の段階的作成。
    - 権限: admin, member
    - 操作: 作成開始時に仮押さえ（TTL=10 分）。確定時に最終競合チェック →`confirmed`。
 
 6. 予約詳細（ドロワー/直リンク）
 
-   - パス: `/t/:tenantId/reservations/:id`
+   - パス: `/t/:slug/reservations/:id`
    - 目的: 状態遷移、内部メモ、監査、機材割当。
    - 権限: admin, member
    - 操作: `pending/confirmed/in_use/completed/canceled` 遷移、ノート/メッセージ投稿、監査参照。
 
 7. 顧客
 
-   - パス: `/t/:tenantId/customers`, `/t/:tenantId/customers/:id`
+   - パス: `/t/:slug/customers`, `/t/:slug/customers/:id`
    - 目的: 顧客情報の CRUD。
    - 権限: admin, member
 
 8. 機材（SKU）
 
-   - パス: `/t/:tenantId/equipments`, `/t/:tenantId/equipments/:id`
+   - パス: `/t/:slug/equipments`, `/t/:slug/equipments/:id`
    - 目的: 在庫/キット定義、SKU 有効/無効。
    - 権限: admin
 
 9. 個体管理（シリアル）
 
-   - パス: `/t/:tenantId/equipments/:id/items`, `/t/:tenantId/equipment-items/:itemId`
+   - パス: `/t/:slug/equipments/:id/items`, `/t/:slug/equipment-items/:itemId`
    - 目的: 個体の状態更新（available/repair/lost）。
    - 権限: admin
 
 10. 部屋管理
 
-- パス: `/t/:tenantId/rooms`
+- パス: `/t/:slug/rooms`
 - 目的: 営業時間・表示色・収容人数の管理。
 - 権限: admin
 
 11. サービス管理
 
-- パス: `/t/:tenantId/services`
+- パス: `/t/:slug/services`
 - 目的: 所要時間・バッファ・色の設定。
 - 権限: admin
 
 12. 例外日管理
 
-- パス: `/t/:tenantId/exceptions`
+- パス: `/t/:slug/exceptions`
 - 目的: 店舗/部屋/機材/スタッフの休業・メンテ等を登録。
 - 権限: admin
 
 13. スタッフ管理
 
-- パス: `/t/:tenantId/staff`, `/t/:tenantId/staff/:id`
+- パス: `/t/:slug/staff`, `/t/:slug/staff/:id`
 - 目的: スキル・稼働/私用例外の管理。
 - 権限: admin
 
 14. 監査ログ
 
-- パス: `/t/:tenantId/audit-logs`
+- パス: `/t/:slug/audit-logs`
 - 目的: 重要操作の履歴参照。
 - 権限: admin
 
 15. 設定/管理トップ
 
-- パス: `/t/:tenantId/admin`
+- パス: `/t/:slug/admin`
 - 目的: 料金表示設定・権限・テナント設定の集約。
 - 権限: admin
 
@@ -354,7 +356,7 @@
 
 ## 13.1 受け入れ基準の追補（S1）
 
-- 直リンク: `/t/:tenantId/reservations/:id` へ直接アクセスすると詳細ドロワー/ページが開く（未認可は 404）。
+- 直リンク: `/t/:slug/reservations/:id` へ直接アクセスすると詳細ドロワー/ページが開く（未認可は 404）。
 - 仮押さえ: 予約作成開始から TTL 内は同一リソースの二重確保不可。TTL 切れで自動解放と UI 通知。
 - 楽観制御: `If-Match: version` 不一致は 409 ＋最新スナップショットを返却。UI は差分提示。
 - カレンダー操作: D&D 後に ACK を待ち、失敗時は元位置へロールバック。

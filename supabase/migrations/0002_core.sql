@@ -20,10 +20,18 @@ create table if not exists public.tenants (
   id uuid primary key default gen_random_uuid(),
   -- name … テナント表示名（必須）。
   name text not null,
-  -- slug … 人間可読な短い識別子。UI/URL 用（任意・ユニーク）。
-  slug text unique,
+  -- slug … 人間可読な短い識別子。UI/URL 用（必須・ユニーク）。
+  slug text not null,
   -- created_at … 作成時刻。既定で現在時刻。
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- 形式チェック：小文字英数・ハイフン、3〜50文字、lower固定
+  constraint tenants_slug_format_ck check (
+    slug = lower(slug)
+    and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+    and char_length(slug) between 3 and 50
+  ),
+  -- ユニーク制約
+  constraint tenants_slug_key unique (slug)
 );
 
 create table if not exists public.tenant_users (

@@ -46,7 +46,32 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/' || pathname === '/dashboard') {
     const cookieTenant = request.cookies.get('tenant_id')?.value
     const url = request.nextUrl.clone()
-    url.pathname = cookieTenant ? `/t/${cookieTenant}` : '/t/select'
+    if (!cookieTenant) {
+      url.pathname = '/t/select'
+    } else {
+      // Cookie には tenant_id(UUID) を格納する前提。slug を解決できなければ選択画面へ。
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (user) {
+          const { data } = await supabase
+            .from('tenants')
+            .select('slug')
+            .eq('id', cookieTenant)
+            .maybeSingle()
+          if (data?.slug) {
+            url.pathname = `/t/${data.slug as string}`
+          } else {
+            url.pathname = '/t/select'
+          }
+        } else {
+          url.pathname = '/login'
+        }
+      } catch {
+        url.pathname = '/t/select'
+      }
+    }
     const redirectResponse = NextResponse.redirect(url)
     for (const c of response.cookies.getAll()) redirectResponse.cookies.set(c)
     return redirectResponse

@@ -5,6 +5,38 @@ import { requireUser } from '@/features/auth/server'
 
 export type TenantRole = 'admin' | 'member'
 export type TenantMembership = { role: TenantRole }
+export type TenantRef = { id: string; slug: string }
+
+async function supabaseWithSession() {
+  await requireUser()
+  return createSupabaseServerClient()
+}
+
+/**
+ * テナント参照（UUID or slug）から {id, slug} を解決。
+ * RLSにより、所属していないテナントは取得できません（その場合 null）。
+ */
+export async function getTenantById(id: string): Promise<TenantRef | null> {
+  const supabase = await supabaseWithSession()
+  const { data } = await supabase
+    .from('tenants')
+    .select('id, slug')
+    .eq('id', id)
+    .maybeSingle()
+  if (!data) return null
+  return { id: data.id as string, slug: data.slug as string }
+}
+
+export async function getTenantBySlug(slug: string): Promise<TenantRef | null> {
+  const supabase = await supabaseWithSession()
+  const { data } = await supabase
+    .from('tenants')
+    .select('id, slug')
+    .eq('slug', slug.toLowerCase())
+    .maybeSingle()
+  if (!data) return null
+  return { id: data.id as string, slug: data.slug as string }
+}
 
 /**
  * ページ/SSR用: 指定したテナントでの所属/ロールを取得（未所属なら null）。

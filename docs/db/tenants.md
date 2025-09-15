@@ -16,13 +16,14 @@
 | --- | --- | :-: | --- | --- | --- |
 | `id` | `uuid` | ✔︎ | `gen_random_uuid()` | テナントID | `primary key` |
 | `name` | `text` | ✔︎ |  | テナント表示名 |  |
-| `slug` | `text` |  |  | 人間可読ID | `unique` |
+| `slug` | `text` | ✔︎ |  | 人間可読ID（URL 用） | `unique`, `check tenants_slug_format_ck` |
 | `created_at` | `timestamptz` | ✔︎ | `now()` | 作成時刻 |  |
 
 ---
 
-## インデックス
-- 既定（PK のみ）。運用で `slug` を参照キーにする場合はユニークインデックスで十分。
+## インデックス/制約
+- `slug` にユニーク制約（`unique (slug)`）を付与。
+- 形式チェック（`tenants_slug_format_ck`）: 小文字英数とハイフンのみ、3〜50 文字、`slug = lower(slug)` を強制。
 
 ---
 
@@ -36,10 +37,10 @@
 ---
 
 ## 補足
-- `slug` は任意。URL や UI での識別に利用可能。
+- `slug` は必須。URL や UI の公開識別子として利用。
+- 既存の参照・外部キーは引き続き `id (uuid)` を正準キーとして使用する。
 
 ---
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

@@ -74,7 +74,7 @@ erDiagram
 ## テーブル要約
 
 - Tenancy
-  - `tenants`: テナント（組織）本体。`slug` は任意の人間可読 ID。
+  - `tenants`: テナント（組織）本体。`slug` は必須の人間可読 ID（小文字英数+ハイフン、3〜50、ユニーク）。
   - `tenant_users`: テナント所属とロール（`admin`/`member`）。PK は `(tenant_id, profile_id)`。
 - Master Data
   - `rooms`: 部屋。`open_hours` は曜日別スロット（JSON）。

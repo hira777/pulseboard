@@ -13,7 +13,7 @@
 
 ## 2. セキュリティ / 権限
 
-- 認証: Supabase JWT（admin / member）。**テナント境界**は URL ルート `/t/:tenantId`。
+- 認証: Supabase JWT（admin / member）。**テナント境界**は URL ルート `/t/:slug`。
 - 表示権限: ページは **未権限=404**（秘匿）、API/操作は **未権限=403**（拒否）。
 - RLS: Postgres Row Level Security と制約ベースで保護。`runbook-rls.md` の検証手順を尊重。
 - 秘密情報: `*KEY*/*TOKEN*/*SECRET*` を出力・ログ・送信しない。
@@ -39,7 +39,7 @@
 
 ## 6. ルーティング / UI
 
-- ルート: `/t/:tenantId/...`（**直リンク可能**）。未権限は 404、API は 403。
+- ルート: `/t/:slug/...`（**直リンク可能**）。未権限は 404、API は 403。
 - ダッシュボード: KPI・最近更新・ショートカット（S1 最小）。
 - 予約 UI: カレンダー/テーブル、作成編集モーダル、競合理由の提示。
 - 管理 UI: 部屋/サービス/機材（SKU・個体）・スタッフの CRUD（admin のみ編集、member は参照）。
