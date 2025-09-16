@@ -119,8 +119,7 @@ $$;
     exclude using gist (
       room_id with =,
       time_range with &&
-    )
-    where (status in ('draft','pending','confirmed','in_use'));
+    );
   ```
 
 - **外部キー**: テナント整合性を保つため `on delete cascade` または `restrict` を適切に設定。

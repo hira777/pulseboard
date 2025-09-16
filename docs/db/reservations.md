@@ -27,11 +27,10 @@
 | `staff_id` | `uuid` |  |  | 担当 | `references staff(id) on delete set null` |
 | `start_at` | `timestamptz` | ✔︎ |  | 開始 |  |
 | `end_at` | `timestamptz` | ✔︎ |  | 終了 |  |
-| `status` | `text` | ✔︎ | `'confirmed'` | 予約状態 | `check (status in ('draft','pending','confirmed','in_use','completed','no_show','canceled'))` |
+| `status` | `text` | ✔︎ | `'confirmed'` | 予約状態 | `check (status in ('confirmed','in_use','completed','no_show','canceled'))` |
 | `buffer_before_min` | `int` | ✔︎ | `0` | 前バッファ（分） |  |
 | `buffer_after_min` | `int` | ✔︎ | `0` | 後バッファ（分） |  |
 | `note` | `text` |  |  | 備考 |  |
-| `hold_expires_at` | `timestamptz` |  |  | 仮押さえ期限 |  |
 | `created_by` | `uuid` |  |  | 作成者 | `references auth.users(id) on delete set null` |
 | `updated_at` | `timestamptz` | ✔︎ | `now()` | 更新時刻 |  |
 | `version` | `int` | ✔︎ | `1` | 将来の楽観ロック等 |  |
@@ -54,7 +53,7 @@
 ---
 
 ## 補足
-- `time_range` は `status in ('draft','pending','confirmed','in_use')` のときのみ生成され、重複判定対象。
+- `time_range` は `status in ('confirmed','in_use')` のときのみ生成され、重複判定対象。
 
 ---
 
@@ -62,12 +61,10 @@
 
 ```mermaid
 stateDiagram-v2
-  [*] --> draft
-  draft --> confirmed: 確定
+  [*] --> confirmed: 確定
   confirmed --> in_use: 入室/開始
   in_use --> completed: 終了
   confirmed --> no_show: 来訪なし
-  draft --> canceled
   confirmed --> canceled
 ```
 

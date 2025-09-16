@@ -67,7 +67,6 @@
 
 - API/Server Action: `create/update/cancel` 実装、`If-Match` で 409 時に最新スナップ返却。
 - Idempotency: 変更系で `Idempotency-Key` を受理し重複作成を防止。
-- 仮押さえ: TTL=10 分の hold 運用を実装。
 
 受け入れ基準
 

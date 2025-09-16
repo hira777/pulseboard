@@ -212,7 +212,7 @@ create table if not exists public.staff (
 -- ===================================================================
 -- make_occupy_tstzrange
 -- 開始・終了日時、前後のバッファ、ステータスから占有時間帯を算出する関数。
--- - draft / pending / confirmed / in_use の場合のみ占有時間帯を返す
+-- - confirmed / in_use の場合のみ占有時間帯を返す
 -- - それ以外のステータスは NULL を返す
 -- - tstzrange 型を返し、予約の重複判定やインデックスに利用する
 --
@@ -240,7 +240,7 @@ create or replace function make_occupy_tstzrange(
 language sql
 immutable
 as $$
-  select case when p_status in ('draft','pending','confirmed','in_use') then
+  select case when p_status in ('confirmed','in_use') then
     tstzrange(
       p_start - (p_before_min::int * interval '1 minute'),
       p_end   + (p_after_min::int  * interval '1 minute'),
@@ -249,7 +249,7 @@ as $$
   else null end
 $$;
 -- 予約テーブル。time_range（生成列）に前後バッファを含む占有時間帯を保持します。
--- ステータスが draft/pending/confirmed/in_use のときのみ重複判定の対象になります。
+-- ステータスが confirmed/in_use のときのみ重複判定の対象になります。
 create table if not exists public.reservations (
   -- id … 予約ID。
   id uuid primary key default gen_random_uuid(),
@@ -267,16 +267,14 @@ create table if not exists public.reservations (
   start_at timestamptz not null,
   -- end_at … 終了日時（start_at より後）。
   end_at timestamptz not null,
-  -- status … 予約状態。重複抑止対象は draft/pending/confirmed/in_use。
-  status text not null default 'confirmed' check (status in ('draft','pending','confirmed','in_use','completed','no_show','canceled')),
+  -- status … 予約状態。重複抑止対象は confirmed/in_use。
+  status text not null default 'confirmed' check (status in ('confirmed','in_use','completed','no_show','canceled')),
   -- buffer_before_min … 前バッファ（分）。
   buffer_before_min int not null default 0,
   -- buffer_after_min … 後バッファ（分）。
   buffer_after_min int not null default 0,
   -- note … 備考。
   note text,
-  -- hold_expires_at … 仮押さえの有効期限（任意）。
-  hold_expires_at timestamptz,
   -- created_by … 作成者（auth.users）。
   created_by uuid references auth.users(id) on delete set null,
   -- updated_at … 更新時刻。既定 now()。アプリ層で適宜更新。
@@ -287,6 +285,7 @@ create table if not exists public.reservations (
   time_range tstzrange generated always as (
     make_occupy_tstzrange(start_at, end_at, buffer_before_min, buffer_after_min, status)
   ) stored
+  constraint reservations_time_order_ck check (end_at > start_at)
 );
 
 create index if not exists idx_reservations_tenant_start on public.reservations(tenant_id, start_at);

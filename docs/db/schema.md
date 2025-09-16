@@ -116,11 +116,10 @@ sequenceDiagram
   User->>App: 予約フォーム入力（顧客/部屋/サービス/時間/機材）
   App->>DB: SELECT calendar_exceptions / rooms / services
   App->>DB: 既存予約と重複チェック（room_id × time_range）
-  App->>DB: INSERT reservations (status='draft')
-  App->>DB: INSERT reservation_equipment（必要数量）
   App-->>User: 確認画面を提示
   User->>App: 確定
-  App->>DB: UPDATE reservations SET status='confirmed'
+  App->>DB: INSERT reservations (status='confirmed')
+  App->>DB: INSERT reservation_equipment（必要数量）
   App->>DB: INSERT audit_logs（予約作成）
 ```
 - 重複防止: `reservations.time_range` + EXCLUDE 制約で DB が二重予約を抑止。
