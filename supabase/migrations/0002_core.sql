@@ -299,6 +299,13 @@ alter table public.reservations
     time_range with &&
   );
 
+alter table public.reservations
+  add constraint reservations_no_overlap_per_staff
+  exclude using gist (
+    staff_id with =,
+    time_range with &&
+  );
+
 create table if not exists public.reservation_equipment (
   -- reservation_id … 親予約。
   reservation_id uuid not null references public.reservations(id) on delete cascade,
