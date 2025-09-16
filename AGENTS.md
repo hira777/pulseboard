@@ -71,7 +71,7 @@
 ## 11. 参考
 
 - 要件: `docs/requirements.md`
-- スキーマ: `docs/schema.md`
+- スキーマ: `docs/db/schema.md`
 - RLS 実証: `docs/archives/runbook-rls.md `
 - ロードマップ: `docs/roadmap.md`
 - Project Status: `AGENTS.md`
