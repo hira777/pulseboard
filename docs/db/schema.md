@@ -4,7 +4,7 @@
 
 - 参照元
   - コア: `supabase/migrations/0002_core.sql`
-  - プロフィール: `docs/db/profiles.md`
+  - プロフィール: `docs/db/tables/profiles.md`
 
 ---
 
@@ -191,13 +191,13 @@ limit 50;
 - 正本: `supabase/migrations/*.sql`（スキーマ変更は必ずマイグレーションで）
 - ドキュメント構成
   - 概要: 本ファイル `docs/schema.md`
-  - テーブル別詳細: `docs/db/<table>.md`（例: `docs/db/profiles.md`）
+  - テーブル別詳細: `docs/db/tables/<table>.md`（例: `docs/db/tables/profiles.md`）
   - 変更履歴（任意）: `docs/db/CHANGELOG.md` または PR タイトルに `[db]` プレフィックスを付与
 - 更新フロー（PR チェックリスト例）
   - [ ] マイグレーション追加/更新
   - [ ] SQL 内コメント（`-- JP:` など）の更新
   - [ ] `docs/schema.md` の要約更新
-  - [ ] 影響テーブルの `docs/db/<table>.md` 更新/新規作成
+  - [ ] 影響テーブルの `docs/db/tables/<table>.md` 更新/新規作成
 - 将来の自動化（任意）
   - `COMMENT ON TABLE/COLUMN` を併用し、`psql` やスクリプトでメタデータを Markdown に生成
   - Mermaid ER 図もスクリプトで再生成（テーブル/外部キー抽出 → テキスト化）
@@ -206,24 +206,24 @@ limit 50;
 
 ## 参考
 
-- 認証・プロフィール: `docs/db/profiles.md`
+- 認証・プロフィール: `docs/db/tables/profiles.md`
 - コア DDL: `supabase/migrations/0002_core.sql`
 
 ---
 
 ## テーブル別詳細
 
-- `db/profiles.md`
-- `db/tenants.md`
-- `db/tenant_users.md`
-- `db/rooms.md`
-- `db/services.md`
-- `db/equipments.md`
-- `db/equipment_items.md`
-- `db/customers.md`
-- `db/staff.md`
-- `db/reservations.md`
-- `db/reservation_equipment_items.md`
-- `db/calendar_exceptions.md`
-- `db/messages.md`
-- `db/audit_logs.md`
+- `docs/db/tables/profiles.md`
+- `docs/db/tables/tenants.md`
+- `docs/db/tables/tenant_users.md`
+- `docs/db/tables/rooms.md`
+- `docs/db/tables/services.md`
+- `docs/db/tables/equipments.md`
+- `docs/db/tables/equipment_items.md`
+- `docs/db/tables/customers.md`
+- `docs/db/tables/staff.md`
+- `docs/db/tables/reservations.md`
+- `docs/db/tables/reservation_equipment_items.md`
+- `docs/db/tables/calendar_exceptions.md`
+- `docs/db/tables/messages.md`
+- `docs/db/tables/audit_logs.md`
