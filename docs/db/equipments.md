@@ -7,7 +7,7 @@
 - **関連（ER）**:
   - `tenants(1) ─ (N) equipments`
   - `equipments(1) ─ (N) equipment_items`
-  - `equipments(1) ─ (N) reservation_equipment`
+  - `equipment_items(1) ─ (N) reservation_equipment_items`
 
 ---
 
@@ -40,4 +40,3 @@
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

@@ -6,7 +6,7 @@
 
 - 基本は **第 3 正規形** を採用する。
   - `reservations` テーブルは「部屋・サービス・顧客・スタッフ」を外部キーで参照。
-  - `reservation_equipments` によって多対多を表現。
+  - `reservation_equipment_items` によって予約と機材個体の多対多を表現。
 - 冗長な情報は極力排除するが、**性能確保のための非正規化/生成列** は許容する。
   - 例: `reservations.time_range` (生成列, `tstzrange(start_at, end_at)`)
   - 例: `reservations.version` (楽観ロック用整数)
@@ -44,7 +44,7 @@ as $$
   select exists (
     select 1 from tenant_users tu
     where tu.tenant_id = target_tenant
-      and tu.user_id = auth.uid()
+      and tu.profile_id = auth.uid()
   );
 $$;
 ```
@@ -75,7 +75,7 @@ $$;
     on reservations (id, version);
   ```
 
-### 機材 (`equipments`, `equipment_items`)
+### 機材 (`equipments`, `equipment_items`, `reservation_equipment_items`)
 
 - **SKU の一意制約**
 
@@ -88,6 +88,15 @@ $$;
   ```sql
   create index equipment_items_tenant_status_idx
     on equipment_items (tenant_id, status);
+  ```
+
+- **個体割当の検索**
+  ```sql
+  create index reservation_equipment_items_reservation_idx
+    on reservation_equipment_items (reservation_id);
+
+  create index reservation_equipment_items_equipment_item_idx
+    on reservation_equipment_items (equipment_item_id);
   ```
 
 ### 顧客 (`customers`)
@@ -119,6 +128,16 @@ $$;
     exclude using gist (
       room_id with =,
       time_range with &&
+    );
+  ```
+
+- **機材個体の重複防止**
+
+  ```sql
+  alter table reservation_equipment_items add constraint reservation_equipment_items_no_overlap
+    exclude using gist (
+      equipment_item_id with =,
+      reservation_time_range with &&
     );
   ```
 

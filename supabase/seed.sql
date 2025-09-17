@@ -31,10 +31,11 @@ values
   ('11111111-1111-1111-1111-111111111112', '00000000-0000-0000-0000-000000000003', 'member')
 on conflict do nothing;
 
--- 部屋（Studio A）
+-- 部屋
 insert into public.rooms (tenant_id, name, capacity)
 values
-  ('11111111-1111-1111-1111-111111111111', 'Studio A', 8);
+  ('11111111-1111-1111-1111-111111111111', 'Studio A', 8),
+  ('11111111-1111-1111-1111-111111111111', 'Studio B', 8);
 
 -- 提供サービス（Standard）
 insert into public.services (tenant_id, name, duration_min, buffer_before_min, buffer_after_min, color)
@@ -45,6 +46,20 @@ values
 insert into public.equipments (tenant_id, sku, name, track_serial, stock, active)
 values
   ('11111111-1111-1111-1111-111111111111', 'CAM-001', 'Camera A', true, 0, true);
+
+-- 機材個体（Camera A の管理対象シリアル）
+with source(serial, tenant_slug, sku) as (
+  values
+    ('CAM-001-ITEM-001', 'acme', 'CAM-001'),
+    ('CAM-001-ITEM-002', 'acme', 'CAM-001'),
+    ('CAM-001-ITEM-101', 'apex', 'CAM-001')
+)
+insert into public.equipment_items (tenant_id, equipment_id, serial, status)
+select t.id, e.id, source.serial, 'available'
+from source
+join public.tenants t on t.slug = source.tenant_slug
+join public.equipments e on e.tenant_id = t.id and e.sku = source.sku
+on conflict (tenant_id, equipment_id, serial) do nothing;
 
 -- 例外時間帯(2025-09-11)
 insert into public.calendar_exceptions(tenant_id,scope,range,type)

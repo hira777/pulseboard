@@ -17,10 +17,10 @@ UI 実装は Next.js App Router（/t/:slug 配下）を前提とします。
 - `/t/:slug/reservations` 予約一覧
 - `/t/:slug/reservations/calendar` カレンダー（`?view=week|day`）
 - `/t/:slug/reservations/new` 予約作成（モーダル/ドロワーでも可）
-- `/t/:slug/reservations/:id` 予約詳細（TBD: ドロワー連携、要件 15.1）
+- `/t/:slug/reservations/:id` 予約詳細（個体割当の確認/変更、ドロワー連携は要件 15.1）
 - `/t/:slug/availability` 可用枠検索（条件パネル＋結果）
 - `/t/:slug/inventory` 機材（SKU 一覧）
-- `/t/:slug/inventory/:sku` SKU 詳細（個体割当は返却時）
+- `/t/:slug/inventory/:sku` SKU 詳細（個体一覧と割当状況）
 - `/t/:slug/rooms` 部屋一覧
 - `/t/:slug/services` サービス一覧
 - `/t/:slug/staff` スタッフ一覧

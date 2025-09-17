@@ -10,7 +10,7 @@
   - `services(1) ─ (N) reservations`
   - `customers(1) ─ (N) reservations`
   - `staff(1) ─ (N) reservations`
-  - `reservations(1) ─ (N) reservation_equipment`
+  - `reservations(1) ─ (N) reservation_equipment_items`
   - `reservations(1) ─ (N) messages`
 
 ---
@@ -54,6 +54,7 @@
 
 ## 補足
 - `time_range` は `status in ('confirmed','in_use')` のときのみ生成され、重複判定対象。
+- start/end/buffer/status を更新すると、トリガーで `reservation_equipment_items.reservation_time_range` も同期される。
 
 ---
 

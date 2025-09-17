@@ -306,15 +306,94 @@ alter table public.reservations
     time_range with &&
   );
 
-create table if not exists public.reservation_equipment (
+create table if not exists public.reservation_equipment_items (
+  -- id … 割当ID。
+  id uuid primary key default gen_random_uuid(),
   -- reservation_id … 親予約。
   reservation_id uuid not null references public.reservations(id) on delete cascade,
-  -- equipment_id … SKU。予約削除時に連鎖削除。
-  equipment_id uuid not null references public.equipments(id) on delete restrict,
-  -- qty … 必要数量（1以上）。
-  qty int not null check (qty > 0),
-  primary key (reservation_id, equipment_id)
+  -- equipment_item_id … 個体ID。故障/紛失時の追跡に利用。
+  equipment_item_id uuid not null references public.equipment_items(id) on delete restrict,
+  -- reservation_time_range … 親予約の占有時間帯（キャンセル時は NULL）。
+  reservation_time_range tstzrange,
+  -- created_at … 割当日時。
+  created_at timestamptz not null default now(),
+  constraint reservation_equipment_items_reservation_item_key unique (reservation_id, equipment_item_id)
 );
+
+-- 個体の二重予約を防ぎ、予約の時間変更に追従させるためのトリガ/関数。
+-- -----------------------------------------------------------------------------
+-- 前提:
+--  - public.reservations に、占有レンジを表す生成列 time_range（tstzrange）がある
+--    （例: make_occupy_tstzrange により confirmed/in_use のみ [start,end)＋バッファを生成）。
+--  - public.reservation_equipment_items に、予約側レンジを複製保持する
+--    reservation_time_range（tstzrange）列が存在する。
+--  - btree_gist 拡張が有効（EXCLUDE制約に必要）。
+-- 目的:
+--  1) 子テーブル（予約×個体）に、親予約の占有レンジを常に反映させる
+--  2) 同一個体（equipment_item_id）で時間帯が重なる割当をDBで排他（EXCLUDE）
+-- 留意:
+--  - reservation_time_range が NULL の行は EXCLUDE の判定対象外（PostgreSQL仕様）。
+--    status に応じて NULL を許容するポリシーか、NOT NULL 制約で常に判定対象にするかを決める。
+--  - AFTER トリガで親の変更を子に一括反映。BEFORE トリガで子行挿入時にも親の値をコピー。
+-- -----------------------------------------------------------------------------
+create or replace function reservation_equipment_items_apply_time_range()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_range tstzrange;  -- 親予約の占有レンジ（reservations.time_range）を受け取る一時変数
+begin
+  -- 子行（NEW.reservation_id）に対応する親予約の time_range を取得
+  select r.time_range into v_range
+  from public.reservations r
+  where r.id = new.reservation_id;
+
+  -- 取得した占有レンジを子行の reservation_time_range に反映
+  -- 例: 親が canceled 等で占有しない場合は NULL が入る（EXCLUDEの判定対象外になる）
+  new.reservation_time_range := v_range;
+  return new;
+end;
+$$;
+
+-- 子テーブル側: 挿入/更新のたびに親予約の占有レンジをコピーして整合を保つ
+create trigger reservation_equipment_items_set_time_range
+before insert or update on public.reservation_equipment_items
+for each row
+execute function reservation_equipment_items_apply_time_range();
+
+create or replace function reservations_sync_equipment_items_time_range()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- 親予約の時間・バッファ・状態の変更後に、紐づく子行の reservation_time_range を一括更新
+  -- NEW.time_range は reservations の生成列（更新後の占有レンジ）
+  update public.reservation_equipment_items rei
+  set reservation_time_range = new.time_range
+  where rei.reservation_id = new.id;
+  return null;  -- AFTERトリガでは戻り値は無視されるため NULL を返す
+end;
+$$;
+
+-- 親テーブル側: 時刻・バッファ・状態が変わったときに子へ反映
+create trigger reservations_sync_equipment_items_time_range
+after update of start_at, end_at, buffer_before_min, buffer_after_min, status on public.reservations
+for each row
+execute function reservations_sync_equipment_items_time_range();
+
+-- 同一個体について、時間帯が重なる割当（reservation_time_range の &&）を禁止
+-- ・'[)' 片側閉区間を想定（tstzrangeのデフォルト）。終端の一致は重ならない扱い。
+-- ・reservation_time_range が NULL の行は判定対象外（取消・非占有など）。
+alter table public.reservation_equipment_items
+  add constraint reservation_equipment_items_no_overlap
+  exclude using gist (
+    equipment_item_id with =,
+    reservation_time_range with &&
+  );
+
+-- 参照系の実行計画を安定させるための補助インデックス
+create index if not exists idx_reservation_equipment_items_reservation on public.reservation_equipment_items(reservation_id);
+create index if not exists idx_reservation_equipment_items_equipment_item on public.reservation_equipment_items(equipment_item_id);
 
 -- Calendar exceptions ----------------------------------------------------------
 -- 休業日/メンテナンス/私用など例外時間帯。scope と target_id で適用範囲を特定します。
@@ -380,7 +459,7 @@ alter table public.equipment_items enable row level security;
 alter table public.customers enable row level security;
 alter table public.staff enable row level security;
 alter table public.reservations enable row level security;
-alter table public.reservation_equipment enable row level security;
+alter table public.reservation_equipment_items enable row level security;
 alter table public.calendar_exceptions enable row level security;
 alter table public.messages enable row level security;
 alter table public.audit_logs enable row level security;
@@ -410,11 +489,21 @@ create policy staff_admin_write on public.staff for all using (app_is_tenant_adm
 create policy reservations_rw on public.reservations
 for all using (app_is_tenant_member(tenant_id)) with check (app_is_tenant_member(tenant_id));
 
-create policy reservation_equipment_rw on public.reservation_equipment
+create policy reservation_equipment_items_rw on public.reservation_equipment_items
 for all using (
-  exists (select 1 from public.reservations r where r.id = reservation_equipment.reservation_id and app_is_tenant_member(r.tenant_id))
+  exists (
+    select 1
+    from public.reservations r
+    where r.id = reservation_equipment_items.reservation_id
+      and app_is_tenant_member(r.tenant_id)
+  )
 ) with check (
-  exists (select 1 from public.reservations r where r.id = reservation_equipment.reservation_id and app_is_tenant_member(r.tenant_id))
+  exists (
+    select 1
+    from public.reservations r
+    where r.id = reservation_equipment_items.reservation_id
+      and app_is_tenant_member(r.tenant_id)
+  )
 );
 
 create policy calendar_exceptions_select on public.calendar_exceptions for select using (app_is_tenant_member(tenant_id));
@@ -427,5 +516,5 @@ create policy audit_logs_select on public.audit_logs for select using (app_is_te
 create policy audit_logs_insert on public.audit_logs for insert with check (app_is_tenant_member(tenant_id));
 
 -- Notes -----------------------------------------------------------------------
--- 備考: v1 では機材在庫（SKU 単位）の厳密検査はアプリ層で実施。
--- 将来はマテリアライズドビュー/トリガ等で DB 側の整合性補助を検討可能です。
+-- 備考: 機材個体の重複予約は reservation_equipment_items_no_overlap で DB 排他済み。
+-- SKU 単位での集計値が必要な場合はビュー等で補助する想定です。

@@ -19,18 +19,20 @@
   - 業務データ（customers/reservations/messages 等）は「メンバー read/write」。
   - 監査（audit_logs）は「admin 参照／メンバー挿入のみ」。
 
-| テーブル                                        | select                    | insert/update/delete              |
-| ----------------------------------------------- | ------------------------- | --------------------------------- |
-| tenants                                         | メンバー                  | 管理者                            |
-| tenant_users                                    | 管理者 または 本人行参照  | 管理者                            |
-| rooms / services / equipments / equipment_items | メンバー                  | 管理者                            |
-| customers                                       | メンバー                  | メンバー                          |
-| staff                                           | メンバー                  | 管理者                            |
-| reservations                                    | メンバー                  | メンバー                          |
-| reservation_equipment                           | 親予約のテナント メンバー | 親予約のテナント メンバー         |
-| calendar_exceptions                             | メンバー                  | 管理者                            |
-| messages                                        | メンバー                  | メンバー                          |
-| audit_logs                                      | 管理者                    | 挿入のみメンバー（更新/削除なし） |
+<!-- prettier-ignore-start -->
+| テーブル              | select              | insert/update/delete      |
+| --------------------- | ------------------- | ------------------------- |
+| tenants               | メンバー            | 管理者                    |
+| tenant_users          | 管理者 または 本人行参照 | 管理者                |
+| rooms/services/equipments/equipment_items | メンバー | 管理者          |
+| customers             | メンバー            | メンバー                  |
+| staff                 | メンバー            | 管理者                    |
+| reservations          | メンバー            | メンバー                  |
+| reservation_equipment | 親予約のテナント メンバー | 親予約のテナント メンバー |
+| calendar_exceptions   | メンバー            | 管理者                    |
+| messages              | メンバー            | メンバー                  |
+| audit_logs            | 管理者              | 挿入のみメンバー（更新/削除なし） |
+<!-- prettier-ignore-end -->
 
 > 目的: アプリ層の不具合時でも、テナント境界や権限を DB レベルで強制する。
 
@@ -57,8 +59,8 @@ erDiagram
   STAFF ||--o{ RESERVATIONS : assigned
   CUSTOMERS ||--o{ RESERVATIONS : by
 
-  RESERVATIONS ||--o{ RESERVATION_EQUIPMENT : uses
-  EQUIPMENTS ||--o{ RESERVATION_EQUIPMENT : item
+  RESERVATIONS ||--o{ RESERVATION_EQUIPMENT_ITEMS : uses
+  EQUIPMENT_ITEMS ||--o{ RESERVATION_EQUIPMENT_ITEMS : assigned
 
   TENANTS ||--o{ CALENDAR_EXCEPTIONS : has
   RESERVATIONS ||--o{ MESSAGES : discuss
@@ -85,7 +87,7 @@ erDiagram
   - `customers`: 顧客。メール・電話は重複許容（ユースケース次第で将来制約）。
   - `staff`: スタッフ。`profile_id` は任意で `auth.users` に紐付け。
   - `reservations`: 予約。`time_range` 生成列＋ EXCLUDE 制約で「部屋 × 時間帯」の重複を DB で抑止。
-  - `reservation_equipment`: 予約と機材 SKU の多対多（数量付き）。
+  - `reservation_equipment_items`: 予約と機材個体の多対多。個体×時間帯の EXCLUDE 制約で二重貸出を防止。
 - Exceptions / Logs
   - `calendar_exceptions`: 休業/メンテ/私用などの例外時間帯（scope=tenant/room/equipment/staff）。
   - `messages`: 予約に紐づく運用メッセージ。
@@ -119,11 +121,11 @@ sequenceDiagram
   App-->>User: 確認画面を提示
   User->>App: 確定
   App->>DB: INSERT reservations (status='confirmed')
-  App->>DB: INSERT reservation_equipment（必要数量）
+  App->>DB: INSERT reservation_equipment_items（割当個体）
   App->>DB: INSERT audit_logs（予約作成）
 ```
 - 重複防止: `reservations.time_range` + EXCLUDE 制約で DB が二重予約を抑止。
-- 在庫確認: SKU 在庫の厳密な同時刻制御は v1 ではアプリ層（将来 DB で補助予定）。
+- 在庫確認: 個体の空き状況を検索し、`reservation_equipment_items` の EXCLUDE 制約で DB が同時割当を拒否。
 
 ### 4) 予約変更/キャンセル
 - 変更: `reservations` を UPDATE。時間帯変更時は EXCLUDE により重複があれば失敗。
@@ -144,7 +146,7 @@ sequenceDiagram
 | --- | --- | --- |
 | テナント作成/招待 | tenants / tenant_users | profiles, auth.users |
 | マスタ登録 | rooms / services / equipments / equipment_items |  |
-| 予約作成 | reservations | reservation_equipment, customers, staff, audit_logs |
+| 予約作成 | reservations | reservation_equipment_items, customers, staff, audit_logs |
 | 予約変更/キャンセル | reservations | messages, audit_logs |
 | 例外設定 | calendar_exceptions | rooms/equipments/staff（target_id） |
 | 運用メモ/監査 | messages / audit_logs | reservations |
@@ -164,12 +166,13 @@ where r.tenant_id = :tenant_id and r.active;
 -- 空き判定はアプリ層で、reservations の time_range と比較して候補生成
 ```
 
-2) 予約の機材構成を取得
+2) 予約に紐づく機材個体を取得
 ```sql
-select e.sku, e.name, re.qty
-from reservation_equipment re
-join equipments e on e.id = re.equipment_id
-where re.reservation_id = :reservation_id;
+select e.sku, e.name, ei.serial
+from reservation_equipment_items rei
+join equipment_items ei on ei.id = rei.equipment_item_id
+join equipments e on e.id = ei.equipment_id
+where rei.reservation_id = :reservation_id;
 ```
 
 3) 直近の監査ログ
@@ -220,7 +223,7 @@ limit 50;
 - `db/customers.md`
 - `db/staff.md`
 - `db/reservations.md`
-- `db/reservation_equipment.md`
+- `db/reservation_equipment_items.md`
 - `db/calendar_exceptions.md`
 - `db/messages.md`
 - `db/audit_logs.md`

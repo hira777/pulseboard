@@ -6,6 +6,7 @@
 - **主な利用画面/API**: 整備・貸出管理、在庫詳細確認。
 - **関連（ER）**:
   - `equipments(1) ─ (N) equipment_items`
+  - `equipment_items(1) ─ (N) reservation_equipment_items`
 
 ---
 
@@ -37,3 +38,8 @@
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
 
+---
+
+## 補足
+- `status <> 'available'` の個体は UI で予約候補から除外し、既存割当がある場合は警告を表示する想定。
+- 個体の予約割当は `reservation_equipment_items` テーブルで管理し、DB の EXCLUDE 制約が二重予約を防ぐ。

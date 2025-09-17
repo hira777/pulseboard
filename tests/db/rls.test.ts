@@ -87,7 +87,7 @@ describe('RLS/制約のテスト', () => {
     ).rejects.toThrow(/exclusion|overlap|conflicting key value/i)
   })
 
-  test('reservation_equipment: 同テナント member は INSERTできる / 別テナントはできない', async () => {
+  test('reservation_equipment_items: 同テナント member は INSERTできる / 別テナントはできない', async () => {
     // 同じテナントの member
     await impersonateTxLocal(c, d.MEMBER_ID_STUDIO_A!)
     const rooms = await c.query(`select * from public.rooms where tenant_id=$1`, [tenant_id])
@@ -99,24 +99,24 @@ describe('RLS/制約のテスト', () => {
          returning id`,
       [tenant_id, room_id],
     )
-    const reservation_a = reservations.rows[0].id
-    const equipments = await c.query(`select * from public.equipments where tenant_id=$1`, [
-      tenant_id,
-    ])
-    const equipment_id = equipments.rows[0].id
+    const reservationId = reservations.rows[0].id
+    const equipmentItems = await c.query(
+      `select id from public.equipment_items where tenant_id = $1 order by serial limit 1`,
+      [tenant_id],
+    )
+    expect(equipmentItems.rowCount).toBeGreaterThan(0)
+    const equipment_item_id = equipmentItems.rows[0].id
     await c.query(
-      `insert into public.reservation_equipment(reservation_id,equipment_id,qty)
-         values ($1,$2,1)`,
-      [reservation_a, equipment_id],
+      `insert into public.reservation_equipment_items(reservation_id,equipment_item_id) values ($1,$2)`,
+      [reservationId, equipment_item_id],
     )
 
     // 別テナントのmember
     await impersonateTxLocal(c, d.MEMBER_ID_STUDIO_B!)
     await expect(
       c.query(
-        `insert into public.reservation_equipment(reservation_id,equipment_id,qty)
-           values ($1,$2,1)`,
-        [reservation_a, equipment_id],
+        `insert into public.reservation_equipment_items(reservation_id,equipment_item_id) values ($1,$2)`,
+        [reservationId, equipment_item_id],
       ),
     ).rejects.toThrow(/row-level security|permission|policy/i)
   })
