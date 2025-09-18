@@ -42,6 +42,34 @@ insert into public.services (tenant_id, name, duration_min, buffer_before_min, b
 values
   ('11111111-1111-1111-1111-111111111111', 'Standard', 60, 15, 15, '#2e7');
 
+-- 顧客
+-- source という一時的な表を作成。列名は name / email / phone / tenant_slug
+with source(name, email, phone, tenant_slug) as (
+  -- source にデータを追加。以下のようにデータが作成される。
+  -- name: 'Acme Productions', email: 'customer-acme@example.com', phone: '+81-3-0000-0001, tenant_slug: 'acme'
+  values
+    ('Acme Productions', 'customer-acme@example.com', '+81-3-0000-0001', 'acme'),
+    ('Sunrise Creators', 'customer-sunrise@example.com', '+81-3-0000-0002', 'acme'),
+    ('Apex Advertising', 'customer-apex@example.com', '+81-3-0000-0101', 'apex')
+)
+-- customers に tenant_id / name / email / phone の列順でデータを挿入。
+insert into public.customers (tenant_id, name, email, phone)
+-- customers に 挿入する値を select で取得する。
+-- tenant_id には tenants.id を挿入したいので t.id を指定している。
+select t.id, source.name, source.email, source.phone
+-- select で取得するデータは source と tenants を join で結合したデータ。
+-- source と tenants の行同士を結合する条件は t.slug = source.tenant_slug。
+-- つまり tenants.slug と source.tenant_slug が一致するデータを結合してる。
+-- public.tenants t の t は public.tenants のエイリアスであり任意に指定できる。
+-- source と tenants を join で結合したデータは以下のようになり、これを select で取得している。
+-- t.id (tenant_id)     | source.name        | source.email              | source.phone
+---------------------+-------------------+---------------------------+------------------
+-- 8f2a...              | Acme Productions  | customer-acme@example.com | +81-3-0000-0001
+from source
+join public.tenants t on t.slug = source.tenant_slug
+-- 挿入時に一意制約（UNIQUE/PRIMARY KEY/EXCLUDE）に当たった場合は、その行だけ挿入をスキップする。
+on conflict do nothing;
+
 -- 機材（Camera A）
 insert into public.equipments (tenant_id, sku, name, track_serial, stock, active)
 values
