@@ -35,12 +35,24 @@ on conflict do nothing;
 insert into public.rooms (tenant_id, name, capacity)
 values
   ('11111111-1111-1111-1111-111111111111', 'Studio A', 8),
-  ('11111111-1111-1111-1111-111111111111', 'Studio B', 8);
+  ('11111111-1111-1111-1111-111111111111', 'Studio B', 8),
+  ('11111111-1111-1111-1111-111111111112', 'Studio AA', 8);
 
 -- 提供サービス（Standard）
 insert into public.services (tenant_id, name, duration_min, buffer_before_min, buffer_after_min, color)
 values
-  ('11111111-1111-1111-1111-111111111111', 'Standard', 60, 15, 15, '#2e7');
+  ('11111111-1111-1111-1111-111111111111', 'Standard', 60, 15, 15, '#2e7'),
+  ('11111111-1111-1111-1111-111111111111', 'Quick Portrait', 30, 10, 10, '#f94'),
+  ('11111111-1111-1111-1111-111111111112', 'Full Session', 90, 20, 20, '#39f')
+on conflict do nothing;
+
+-- スタッフ
+insert into public.staff (tenant_id, name, active)
+values
+  ('11111111-1111-1111-1111-111111111111', 'Akari Tanaka', true),
+  ('11111111-1111-1111-1111-111111111111', 'Shun Kato', true),
+  ('11111111-1111-1111-1111-111111111112', 'Mina Hayashi', true)
+on conflict do nothing;
 
 -- 顧客
 -- source という一時的な表を作成。列名は name / email / phone / tenant_slug
