@@ -5,16 +5,17 @@ insert into auth.users (id, email)
 values
   ('00000000-0000-0000-0000-000000000001', 'db-admin-acme@example.com'),
   ('00000000-0000-0000-0000-000000000002', 'db-member-acme@example.com'),
-  ('00000000-0000-0000-0000-000000000003', 'db-member-apex@example.com')
+  ('00000000-0000-0000-0000-000000000003', 'db-admin-apex@example.com'),
+  ('00000000-0000-0000-0000-000000000004', 'db-member-apex@example.com')
 on conflict (id) do nothing;
 
 -- プロフィール（public.profiles）
 insert into public.profiles (id, role)
 values
   ('00000000-0000-0000-0000-000000000001', 'admin'),
-  ('00000000-0000-0000-0000-000000000002', 'member'),
-  ('00000000-0000-0000-0000-000000000003', 'member')
-on conflict (id) do nothing;
+  ('00000000-0000-0000-0000-000000000003', 'admin')
+on conflict (id) do update
+set role = excluded.role;
 
 -- テナント
 insert into public.tenants (id, name, slug)
@@ -28,7 +29,8 @@ insert into public.tenant_users (tenant_id, profile_id, role)
 values
   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001', 'admin'),
   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000002', 'member'),
-  ('11111111-1111-1111-1111-111111111112', '00000000-0000-0000-0000-000000000003', 'member')
+  ('11111111-1111-1111-1111-111111111112', '00000000-0000-0000-0000-000000000003', 'admin'),
+  ('11111111-1111-1111-1111-111111111112', '00000000-0000-0000-0000-000000000004', 'member')
 on conflict do nothing;
 
 -- 部屋
@@ -85,14 +87,15 @@ on conflict do nothing;
 -- 機材（Camera A）
 insert into public.equipments (tenant_id, sku, name, track_serial, stock, active)
 values
-  ('11111111-1111-1111-1111-111111111111', 'CAM-001', 'Camera A', true, 0, true);
+  ('11111111-1111-1111-1111-111111111111', 'CAM-001', 'Camera A', true, 0, true),
+  ('11111111-1111-1111-1111-111111111112', 'CAM-002', 'Camera B', true, 0, true);
 
 -- 機材個体（Camera A の管理対象シリアル）
 with source(serial, tenant_slug, sku) as (
   values
     ('CAM-001-ITEM-001', 'acme', 'CAM-001'),
     ('CAM-001-ITEM-002', 'acme', 'CAM-001'),
-    ('CAM-001-ITEM-101', 'apex', 'CAM-001')
+    ('CAM-002-ITEM-101', 'apex', 'CAM-002')
 )
 insert into public.equipment_items (tenant_id, equipment_id, serial, status)
 select t.id, e.id, source.serial, 'available'
