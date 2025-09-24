@@ -6,7 +6,8 @@ begin;
 
 -- アプリ固有のユーザープロフィールを保持するテーブル
 create table if not exists public.profiles (
-  -- id: 外部キー(auth.users.id)を参照。参照している行が削除されたらそれを参照していたテーブルの行も削除される。
+  -- id: 外部キー(auth.users.id)を参照。
+  -- 参照している auth.users のレコードが削除されたら、それを参照している profiles レコードも削除される。
   id uuid primary key references auth.users(id) on delete cascade,
   -- 表示名（任意）
   display_name text,
@@ -20,7 +21,7 @@ create table if not exists public.profiles (
 -- これを有効にしないとポリシーが効かず、全ユーザーが自由に参照/更新できてしまう
 alter table public.profiles enable row level security;
 
--- RLS ポリシー: 認証済みユーザーが自分自身の profiles レコードだけ読み取れる
+-- RLS ポリシー: 認証済みユーザーが自分自身の profiles レコードだけ参照できる
 create policy profiles_select_own
   -- public.profiles が対象
   on public.profiles
@@ -28,7 +29,8 @@ create policy profiles_select_own
   for select
   -- authenticated ロール（ログイン済みユーザー）が対象
   to authenticated
-  -- 「テーブルの id カラムが、現在ログインしているユーザーの UUID (auth.uid()) と一致する」行を返す
+  -- 以下の条件に一致するレコードを参照できる
+  -- 「profiles の id が、現在ログインしているユーザーの UUID (auth.uid()) と一致する」
   using (id = auth.uid());
 
 -- RLS ポリシー: 認証済みユーザーが自分自身の profiles レコードだけ更新できる

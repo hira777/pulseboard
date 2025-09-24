@@ -7,227 +7,244 @@ create extension if not exists pgcrypto;
 --  EXCLUDE 制約（重複防止）に利用
 create extension if not exists btree_gist;
 
--- 以降の関数/テーブル/ポリシーを public スキーマに作成するための明示設定です。
-set search_path = public;
-
-
--- Helper functions for RLS ----------------------------------------------------
 -- Tenancy ---------------------------------------------------------------------
--- テナント（tenants）とテナント所属ユーザー（tenant_users）を管理します。
--- 1ユーザーは複数テナントに所属可能。RBAC は role（'admin' | 'member'）で表現します。
+-- テナント(組織)を管理するテーブル
 create table if not exists public.tenants (
-  -- id … テナントID（UUID）。gen_random_uuid() により生成。
+  -- id: テナントID（UUID）
   id uuid primary key default gen_random_uuid(),
-  -- name … テナント表示名（必須）。
+  -- name: テナント表示名。
   name text not null,
-  -- slug … 人間可読な短い識別子。UI/URL 用（必須・ユニーク）。
+  -- slug: 人間可読な短い識別子。UI/URL 用（必須・ユニーク）。
   slug text not null,
-  -- created_at … 作成時刻。既定で現在時刻。
+  -- created_at: レコード作成日時、自動で現在時刻が入る
   created_at timestamptz not null default now(),
-  -- 形式チェック：小文字英数・ハイフン、3〜50文字、lower固定
+  -- slug のフォーマットチェック(小文字英数・ハイフン、3〜50文字、lower固定)。
+  -- レコード追加や更新時に自動で評価される。
   constraint tenants_slug_format_ck check (
     slug = lower(slug)
     and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
     and char_length(slug) between 3 and 50
   ),
-  -- ユニーク制約
+  -- slug の ユニーク制約
   constraint tenants_slug_key unique (slug)
 );
+-- tenants の RLS(Row Level Security)を有効化
+alter table public.tenants enable row level security;
 
+-- ユーザーのテナント所属とロールを管理するテーブル
 create table if not exists public.tenant_users (
-  -- tenant_id … 所属先テナント。テナント削除時は連鎖削除。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- profile_id … auth.users.id への参照。ユーザー削除時は連鎖削除。
+  -- profile_id: ユーザーのID(auth.users.id)。参照先のユーザー削除時は、参照している tenant_users レコードも削除。
   profile_id uuid not null references auth.users(id) on delete cascade,
-  -- role … RBACロール。'admin' or 'member' のみを許容。
+  -- role: 権限（admin / member）。デフォルトは member
   role text not null default 'member' check (role in ('admin','member')),
-  -- created_at … 追加日時。
+  -- created_at: レコード作成日時、自動で現在時刻が入る
   created_at timestamptz not null default now(),
-  -- PK … (tenant_id, profile_id) で一意（1ユーザー1テナントに一意な所属）。
+  -- 複合主キー: (tenant_id, profile_id) で一意。つまり「1つのユーザーは同じテナントに二重登録できない」。
   primary key (tenant_id, profile_id)
 );
-
-alter table public.tenants enable row level security;
+-- tenant_users の RLS(Row Level Security)を有効化
 alter table public.tenant_users enable row level security;
 
--- RLS 判定用のヘルパー関数群。
--- app_is_tenant_member: 認証ユーザーが対象テナントのメンバーであるかを判定。
--- app_is_tenant_admin : 上記に加えて role='admin' であるかを判定。
+-- 認証ユーザーが対象テナント(target_tenant)のメンバーであるかを判定する関数
 create or replace function app_is_tenant_member(target_tenant uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.tenant_users tu
-    where tu.tenant_id = target_tenant
-      and tu.profile_id = auth.uid()
-  );
-$$;
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = public
+  as $$
+    select exists (
+      select 1
+      from public.tenant_users tu
+      where tu.tenant_id = target_tenant
+        and tu.profile_id = auth.uid()
+    );
+  $$;
 
+-- 認証ユーザーが対象テナント(target_tenant)のメンバーであり、管理者であるかを判定する関数
 create or replace function app_is_tenant_admin(target_tenant uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.tenant_users tu
-    where tu.tenant_id = target_tenant
-      and tu.profile_id = auth.uid()
-      and tu.role = 'admin'
-  );
-$$;
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path = public
+  as $$
+    select exists (
+      select 1
+      from public.tenant_users tu
+      where tu.tenant_id = target_tenant
+        and tu.profile_id = auth.uid()
+        and tu.role = 'admin'
+    );
+  $$;
 
-
--- tenants テーブルの RLS ポリシー
 drop policy if exists tenants_select on public.tenants;
-create policy tenants_select on public.tenants
-for select using (app_is_tenant_member(id));
+-- RLS ポリシー: メンバーが所属しているテナントの tenants レコードを参照できる
+create policy tenants_select
+  on public.tenants
+  for select
+  using (app_is_tenant_member(id));
 
 drop policy if exists tenants_admin_write on public.tenants;
-create policy tenants_admin_write on public.tenants
-for all using (app_is_tenant_admin(id)) with check (app_is_tenant_admin(id));
+-- RLS ポリシー: 管理者が所属しているテナントの tenants レコードを全操作できる
+create policy tenants_admin_write
+  on public.tenants
+  -- すべての操作 (select / insert / update / delete)が対象
+  for all
+  using (app_is_tenant_admin(id))
+  -- 挿入しようとする行か、更新後の行が app_is_tenant_admin(id) の条件をみたしている場合、挿入と更新が可能。
+  with check (app_is_tenant_admin(id));
 
--- tenant_users テーブルの RLS ポリシー
 drop policy if exists tenant_users_select on public.tenant_users;
-create policy tenant_users_select on public.tenant_users
-for select using (
-  app_is_tenant_admin(tenant_id) or profile_id = auth.uid()
-);
+-- RLS ポリシー:
+-- - 管理者は所属しているテナントの tenant_users レコードを参照できる
+-- - メンバーは所属しているテナントかつ、自分の tenant_users レコードだけ参照できる
+create policy tenant_users_select
+  on public.tenant_users
+  for select
+  using (
+    app_is_tenant_admin(tenant_id) or profile_id = auth.uid()
+  );
 
 drop policy if exists tenant_users_admin_write on public.tenant_users;
-create policy tenant_users_admin_write on public.tenant_users
-for all using (app_is_tenant_admin(tenant_id)) with check (app_is_tenant_admin(tenant_id));
+-- RLS ポリシー:
+create policy tenant_users_admin_write
+  on public.tenant_users
+  for all
+  using (app_is_tenant_admin(tenant_id))
+  with check (app_is_tenant_admin(tenant_id));
 
 -- Master data -----------------------------------------------------------------
--- マスターデータ群。各テナント固有の部屋/サービス/機材/顧客/スタッフ情報を保持します。
+-- 部屋情報を管理するテーブル
 create table if not exists public.rooms (
-  -- id … 部屋ID（UUID）。
+  -- id 部屋ID（UUID）。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。削除時は連鎖削除。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- name … 部屋名（必須）。
+  -- name: 部屋名。
   name text not null,
-  -- capacity … 収容人数の目安（任意）。
+  -- capacity: 収容人数の目安（任意）。
   capacity int,
-  -- color … UI上の色指定（任意）。
+  -- color: UI上の色指定（任意）。
   color text,
-  open_hours jsonb, -- e.g. { mon: [{start:"09:00", end:"18:00"}], ... }
-  -- open_hours … 営業時間スロット（アプリ層で解釈）。
-  -- active … 予約対象として有効かどうか。
+  -- open_hours: 営業時間スロット（アプリ層で解釈）。
+  -- e.g. { mon: [{start:"09:00", end:"18:00"}], ... }
+  open_hours jsonb,
+  -- active: 予約対象として有効かどうか。
   active boolean not null default true,
+  -- 同一テナント内で部屋名(name)の重複を禁止
+  constraint rooms_tenant_id_name_key unique (tenant_id, name),
+  -- 外部キー参照を可能にするためのユニーク制約
   constraint rooms_tenant_id_id_key unique (tenant_id, id)
 );
 
-alter table public.rooms
-  add constraint rooms_tenant_id_name_key unique (tenant_id, name);
-
+-- 提供サービスを管理するテーブル
 create table if not exists public.services (
-  -- id … サービス（メニュー）ID。
+  -- id: サービス（メニュー）ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- name … サービス名。
+  -- name: サービス名。
   name text not null,
-  -- duration_min … 提供時間（分）。
+  -- duration_min: 提供時間（分）。
   duration_min int not null,
-  -- buffer_before_min … 前バッファ（分）。
+  -- buffer_before_min: 前バッファ（分）。
   buffer_before_min int not null default 0,
-  -- buffer_after_min … 後バッファ（分）。
+  -- buffer_after_min: 後バッファ（分）。
   buffer_after_min int not null default 0,
-  -- color … UI色（任意）。
+  -- color: UI色（任意）。
   color text,
+  -- 外部キー参照を可能にするためのユニーク制約
   constraint services_tenant_id_id_key unique (tenant_id, id)
 );
 
+--  機材 SKU（型番）を管理するテーブル
 create table if not exists public.equipments (
-  -- id … 機材SKU ID。
+  -- id: SKU の ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- sku … テナント内ユニークな型番/SKU。
+  -- sku: SKU(ユニーク)。
   sku text not null,
-  -- name … 機材名。
+  -- name: 機材名。
   name text not null,
-  -- track_serial … true の場合、個体（シリアル）単位で管理。
+  -- track_serial: true の場合、個体（シリアル）単位で管理。
   track_serial boolean not null default false,
-  -- stock … SKU全体の在庫数（個体管理しない場合に使用）。
+  -- stock: SKU全体の在庫数（個体管理しない場合に使用）。
   stock int not null default 0,
-  -- active … 取り扱い中フラグ。
+  -- active: 取り扱い中フラグ。
   active boolean not null default true,
+  -- 同一テナント内でSKU(sku)の重複を禁止
   constraint equipments_tenant_id_sku_key unique (tenant_id, sku),
+  -- 外部キー参照を可能にするためのユニーク制約
   constraint equipments_tenant_id_id_key unique (tenant_id, id)
 );
 
+-- 機材の個体（シリアル）を管理するテーブル
 create table if not exists public.equipment_items (
-  -- id … 機材個体ID。
+  -- id: 機材個体ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- equipment_id … 紐づくSKU。
+  -- equipment_id: 紐づいているSKUのID(equipments.id)。参照先の equipments のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
   equipment_id uuid not null references public.equipments(id) on delete cascade,
-  -- serial … 個体シリアル（SKU内で一意）。
+  -- serial: 個体シリアル（ユニーク）。
   serial text,
-  -- status … 個体状態。'available'|'repair'|'lost'。
+  -- status: 個体状態。'available'|'repair'|'lost'。
   status text not null default 'available' check (status in ('available','repair','lost')),
-  constraint equipment_items_tenant_id_id_key unique (tenant_id, id),
+  -- 同一SKU内でのシリアルの重複を禁止
   constraint equipment_items_tenant_equipment_serial_key unique (tenant_id, equipment_id, serial),
-  -- equipment_items_equipment_fk という名前の制約
-  -- foreign key (tenant_id, equipment_id) で tenant_id と equipment_id が複合外部キーであることを宣言している
-  -- そしてその外部キーの参照先が equipments の tenant_id と id である。
-  -- そのため、tenant_id と equipment_id の値は、equipments の tenant_id と id カラムに存在
+  -- 外部キー参照を可能にするためのユニーク制約
+  constraint equipment_items_tenant_id_id_key unique (tenant_id, id),
+  -- 複合外部キー
+  -- equipment_items の tenant_id,equipment_id が equipments の tenant_id, id に存在することを保証する。
   constraint equipment_items_equipment_tenant_fk
     foreign key (tenant_id, equipment_id)
     references public.equipments(tenant_id, id)
-    -- 参照先の equipments の行が削除されたら、それに紐づくこのテーブルの行も削除される
+    -- 参照先の equipments のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
     on delete cascade
 );
 
+-- 顧客情報を管理するテーブル
 create table if not exists public.customers (
-  -- id … 顧客ID。
+  -- id: 顧客ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- name … 顧客名。
+  -- name: 顧客名。
   name text not null,
-  -- email … 連絡用メール（重複許容）。
+  -- email: 連絡用メール（重複許容）。
   email text not null,
-  -- phone … 連絡用電話（重複許容）。
+  -- phone: 連絡用電話（重複許容）。
   phone text not null,
-  -- note … メモ。
+  -- note: メモ。
   note text,
-  -- created_at … 登録時刻。
+  -- created_at: 登録時刻。
   created_at timestamptz not null default now(),
   constraint customers_tenant_id_id_key unique (tenant_id, id)
 );
 
 create table if not exists public.staff (
-  -- id … スタッフID。
+  -- id: スタッフID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- profile_id … テナント所属ユーザー（必須）。
+  -- profile_id: テナント所属ユーザー。
   profile_id uuid not null,
-  -- name … 表示名。
+  -- name: 表示名。
   name text not null,
-  -- skills … 任意のスキル情報（JSON）。
+  -- skills: 任意のスキル情報（JSON）。
   skills jsonb,
-  -- active … 在籍/稼働中フラグ。
+  -- active: 在籍/稼働中フラグ。
   active boolean not null default true,
   constraint staff_profile_tenant_fk foreign key (tenant_id, profile_id)
     references public.tenant_users(tenant_id, profile_id) on delete cascade,
   constraint staff_tenant_id_id_key unique (tenant_id, id)
 );
 
--- Reservations ----------------------------------------------------------------
 -- ===================================================================
--- make_occupy_tstzrange
 -- 開始・終了日時、前後のバッファ、ステータスから占有時間帯を算出する関数。
 -- - confirmed / in_use の場合のみ占有時間帯を返す
 -- - それ以外のステータスは NULL を返す
@@ -268,35 +285,35 @@ $$;
 -- 予約テーブル。time_range（生成列）に前後バッファを含む占有時間帯を保持します。
 -- ステータスが confirmed/in_use のときのみ重複判定の対象になります。
 create table if not exists public.reservations (
-  -- id … 予約ID。
+  -- id: 予約ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- customer_id … 予約の顧客。削除時は NULL。
+  -- customer_id: 予約の顧客。削除時は NULL。
   customer_id uuid references public.customers(id) on delete set null,
-  -- service_id … 選択サービス。削除時は NULL。
+  -- service_id: 選択サービス。削除時は NULL。
   service_id uuid references public.services(id) on delete set null,
-  -- room_id … 対象部屋（必須）。参照先に予約があると部屋は削除不可（restrict）。
+  -- room_id: 対象部屋。参照先に予約があると部屋は削除不可（restrict）。
   room_id uuid not null references public.rooms(id) on delete restrict,
-  -- staff_id … 担当スタッフ。削除時は NULL。
+  -- staff_id: 担当スタッフ。削除時は NULL。
   staff_id uuid references public.staff(id) on delete set null,
-  -- start_at … 開始日時。
+  -- start_at: 開始日時。
   start_at timestamptz not null,
-  -- end_at … 終了日時（start_at より後）。
+  -- end_at: 終了日時（start_at より後）。
   end_at timestamptz not null,
-  -- status … 予約状態。重複抑止対象は confirmed/in_use。
+  -- status: 予約状態。重複抑止対象は confirmed/in_use。
   status text not null default 'confirmed' check (status in ('confirmed','in_use','completed','no_show','canceled')),
-  -- buffer_before_min … 前バッファ（分）。
+  -- buffer_before_min: 前バッファ（分）。
   buffer_before_min int not null default 0,
-  -- buffer_after_min … 後バッファ（分）。
+  -- buffer_after_min: 後バッファ（分）。
   buffer_after_min int not null default 0,
-  -- note … 備考。
+  -- note: 備考。
   note text,
-  -- created_by … 作成者（auth.users）。
+  -- created_by: 作成者（auth.users）。
   created_by uuid references auth.users(id) on delete set null,
-  -- updated_at … 更新時刻。既定 now()。アプリ層で適宜更新。
+  -- updated_at: 更新時刻。既定 now()。アプリ層で適宜更新。
   updated_at timestamptz not null default now(),
-  -- version … 将来の楽観的ロック等に利用可能（任意）。
+  -- version: 将来の楽観的ロック等に利用可能（任意）。
   version int not null default 1,
   -- occupy only when the status blocks other bookings
   time_range tstzrange generated always as (
@@ -333,17 +350,17 @@ alter table public.reservations
   );
 
 create table if not exists public.reservation_equipment_items (
-  -- id … 割当ID。
+  -- id: 割当ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。親予約のテナントと一致させる。
+  -- tenant_id: 所属テナント。親予約のテナントと一致させる。
   tenant_id uuid not null,
-  -- reservation_id … 親予約。
+  -- reservation_id: 親予約。
   reservation_id uuid not null,
-  -- equipment_item_id … 個体ID。故障/紛失時の追跡に利用。
+  -- equipment_item_id: 個体ID。故障/紛失時の追跡に利用。
   equipment_item_id uuid not null,
-  -- reservation_time_range … 親予約の占有時間帯（キャンセル時は NULL）。
+  -- reservation_time_range: 親予約の占有時間帯（キャンセル時は NULL）。
   reservation_time_range tstzrange,
-  -- created_at … 割当日時。
+  -- created_at: 割当日時。
   created_at timestamptz not null default now(),
   constraint reservation_equipment_items_reservation_item_key unique (reservation_id, equipment_item_id),
   constraint reservation_equipment_items_reservation_tenant_fk foreign key (tenant_id, reservation_id)
@@ -438,36 +455,36 @@ create index if not exists idx_reservation_equipment_items_equipment_item on pub
 -- Calendar exceptions ----------------------------------------------------------
 -- 休業日/メンテナンス/私用など例外時間帯。scope と target_id で適用範囲を特定します。
 create table if not exists public.calendar_exceptions (
-  -- id … 例外ID。
+  -- id: 例外ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- scope … 適用範囲。'tenant'|'room'|'equipment'|'staff'。
+  -- scope: 適用範囲。'tenant'|'room'|'equipment'|'staff'。
   scope text not null check (scope in ('tenant','room','equipment','staff')),
-  -- target_id … 対象ID。scope に応じて参照先が異なる（任意）。
+  -- target_id: 対象ID。scope に応じて参照先が異なる（任意）。
   target_id uuid,
-  -- range … 例外の時間範囲（[start, end)）。
+  -- range: 例外の時間範囲（[start, end)）。
   range tstzrange not null,
-  -- type … 種別。'holiday'（休業）|'maintenance'（メンテ）|'ooh'（私用）|'busy'（埋まり）。
+  -- type: 種別。'holiday'（休業）|'maintenance'（メンテ）|'ooh'（私用）|'busy'（埋まり）。
   type text not null check (type in ('holiday','maintenance','ooh','busy')),
-  -- note … 備考。
+  -- note: 備考。
   note text
 );
 
 -- Messaging & audit ------------------------------------------------------------
 -- 内部メッセージと監査ログ。誰が/何を/いつを記録します。
 create table if not exists public.messages (
-  -- id … メッセージID。
+  -- id: メッセージID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- reservation_id … 紐づく予約。予約削除で連鎖削除。
+  -- reservation_id: 紐づく予約。予約削除で連鎖削除。
   reservation_id uuid not null,
-  -- sender_profile_id … 送信者（テナント所属ユーザー）。
+  -- sender_profile_id: 送信者（テナント所属ユーザー）。
   sender_profile_id uuid not null,
-  -- body … 本文。
+  -- body: 本文。
   body text not null,
-  -- created_at … 送信時刻。
+  -- created_at: 送信時刻。
   created_at timestamptz not null default now(),
   constraint messages_reservation_tenant_fk foreign key (tenant_id, reservation_id)
     references public.reservations(tenant_id, id) on delete cascade,
@@ -477,21 +494,21 @@ create table if not exists public.messages (
 );
 
 create table if not exists public.audit_logs (
-  -- id … 監査ログID。
+  -- id: 監査ログID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id … 所属テナント。
+  -- tenant_id: 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- actor … 実行者（auth.users）。削除時は NULL。
+  -- actor: 実行者（auth.users）。削除時は NULL。
   actor uuid references auth.users(id) on delete set null,
-  -- action … 動作名（例: 'reservation.update'）。
+  -- action: 動作名（例: 'reservation.update'）。
   action text not null,
-  -- target_type … 対象の種類（例: 'reservation'）。
+  -- target_type: 対象の種類（例: 'reservation'）。
   target_type text not null,
-  -- target_id … 対象のID（任意）。
+  -- target_id: 対象のID（任意）。
   target_id uuid,
-  -- diff … 変更差分など（JSON）。
+  -- diff: 変更差分など（JSON）。
   diff jsonb,
-  -- at … 記録時刻。
+  -- at: 記録時刻。
   at timestamptz not null default now()
 );
 
