@@ -39,8 +39,13 @@
 ---
 
 ## インデックス/制約
-- `idx_reservations_tenant_start (tenant_id, start_at)`
-- `idx_reservations_room_start (room_id, start_at)`
+- UNIQUE 制約: `(tenant_id, id)`（テナントとIDの組合せを外部参照で利用）
+- 外部キー: `(tenant_id, customer_id)` → `customers(tenant_id, id)`
+- 外部キー: `(tenant_id, service_id)` → `services(tenant_id, id)`
+- 外部キー: `(tenant_id, room_id)` → `rooms(tenant_id, id)`
+- 外部キー: `(tenant_id, staff_id)` → `staff(tenant_id, id)`
+- インデックス: `idx_reservations_tenant_start (tenant_id, start_at)`
+- インデックス: `idx_reservations_room_start (room_id, start_at)`
 - EXCLUDE 制約: `exclude using gist (room_id with =, time_range with &&)`（部屋×時間帯の重複防止）
 
 ---
@@ -55,6 +60,7 @@
 ## 補足
 - `time_range` は `status in ('confirmed','in_use')` のときのみ生成され、重複判定対象。
 - start/end/buffer/status を更新すると、トリガーで `reservation_equipment_items.reservation_time_range` も同期される。
+- `tenant_id` と各参照IDを組み合わせた外部キーで、他テナントの顧客・サービス・部屋・スタッフを参照できない。
 
 ---
 

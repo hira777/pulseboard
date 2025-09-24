@@ -36,6 +36,8 @@
 
 > 目的: アプリ層の不具合時でも、テナント境界や権限を DB レベルで強制する。
 
+> マルチテナント整合性: 主なテーブルは `(tenant_id, id)` の複合一意制約を持ち、参照側は同じ組で外部キーを張って他テナントとの紐づけを防いでいる。
+
 ---
 
 ## ER 図（簡略）
@@ -79,18 +81,18 @@ erDiagram
   - `tenants`: テナント（組織）本体。`slug` は必須の人間可読 ID（小文字英数+ハイフン、3〜50、ユニーク）。
   - `tenant_users`: テナント所属とロール（`admin`/`member`）。PK は `(tenant_id, profile_id)`。
 - Master Data
-  - `rooms`: 部屋。`open_hours` は曜日別スロット（JSON）。
-  - `services`: 提供メニュー。`duration_min` と前後バッファで占有時間を計算。
-  - `equipments`: 機材 SKU。在庫数/個体管理フラグ。
-  - `equipment_items`: 機材個体（シリアル）。
+  - `rooms`: 部屋。`open_hours` は曜日別スロット（JSON）。`(tenant_id, id)` で一意。
+  - `services`: 提供メニュー。`duration_min` と前後バッファで占有時間を計算。`(tenant_id, id)` で一意。
+  - `equipments`: 機材 SKU。在庫数/個体管理フラグ。SKU は `tenant_id` との複合ユニーク、`(tenant_id, id)` も一意。
+  - `equipment_items`: 機材個体（シリアル）。`(tenant_id, equipment_id, serial)` と `(tenant_id, id)` で整合性を確保。親 SKU とは複合外部キー。
 - Operational
-  - `customers`: 顧客。メール・電話は重複許容（ユースケース次第で将来制約）。
-  - `staff`: スタッフ。`profile_id` は任意で `auth.users` に紐付け。
-  - `reservations`: 予約。`time_range` 生成列＋ EXCLUDE 制約で「部屋 × 時間帯」の重複を DB で抑止。
-  - `reservation_equipment_items`: 予約と機材個体の多対多。個体×時間帯の EXCLUDE 制約で二重貸出を防止。
+  - `customers`: 顧客。メール・電話は重複許容（ユースケース次第で将来制約）。`(tenant_id, id)` で一意。
+  - `staff`: スタッフ。`profile_id` は任意で `auth.users` に紐付け。`(tenant_id, id)` で一意。
+  - `reservations`: 予約。`time_range` 生成列＋ EXCLUDE 制約で「部屋 × 時間帯」の重複を DB で抑止。顧客・サービス・部屋・スタッフとは `(tenant_id, xxx_id)` の複合外部キーでテナント一致を保証。
+  - `reservation_equipment_items`: 予約と機材個体の多対多。個体×時間帯の EXCLUDE 制約で二重貸出を防止し、親予約と同じ `tenant_id` を保持する。
 - Exceptions / Logs
   - `calendar_exceptions`: 休業/メンテ/私用などの例外時間帯（scope=tenant/room/equipment/staff）。
-  - `messages`: 予約に紐づく運用メッセージ。
+  - `messages`: 予約に紐づく運用メッセージ。`(tenant_id, reservation_id)` で親予約を参照する。
   - `audit_logs`: 監査ログ（だれが/なにを/いつ）。admin のみ参照。
 
 ---

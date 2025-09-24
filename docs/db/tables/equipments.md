@@ -25,8 +25,9 @@
 
 ---
 
-## インデックス
-- 既定（PK, unique(sku)）。
+## インデックス/制約
+- UNIQUE 制約: `(tenant_id, id)`（テナントとIDの組合せを外部参照で利用）
+- UNIQUE 制約: `(tenant_id, sku)`（テナント内でSKUを一意に保つ）
 
 ---
 

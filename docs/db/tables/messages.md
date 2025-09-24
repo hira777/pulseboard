@@ -7,6 +7,7 @@
 - **関連（ER）**:
   - `reservations(1) ─ (N) messages`
   - `auth.users(1) ─ (N) messages`（送信者）
+- **テナント整合性**: 親予約と同じ `tenant_id` を保持し、他テナントの予約には紐付けできない。
 
 ---
 
@@ -16,15 +17,15 @@
 | --- | --- | :-: | --- | --- | --- |
 | `id` | `uuid` | ✔︎ | `gen_random_uuid()` | メッセージID | `primary key` |
 | `tenant_id` | `uuid` | ✔︎ |  | 所属テナント | `references tenants(id) on delete cascade` |
-| `reservation_id` | `uuid` | ✔︎ |  | 紐づく予約 | `references reservations(id) on delete cascade` |
+| `reservation_id` | `uuid` | ✔︎ |  | 紐づく予約 | `(tenant_id, reservation_id)` → `reservations(tenant_id, id)` on delete cascade |
 | `sender_profile_id` | `uuid` | ✔︎ |  | 送信者 | `references auth.users(id) on delete cascade` |
 | `body` | `text` | ✔︎ |  | 本文 |  |
 | `created_at` | `timestamptz` | ✔︎ | `now()` | 送信時刻 |  |
 
 ---
 
-## インデックス
-- 既定（PK のみ）。
+## インデックス/制約
+- UNIQUE 制約: `(tenant_id, id)`（テナントとIDの組合せを外部参照で利用）
 
 ---
 
@@ -37,4 +38,3 @@
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

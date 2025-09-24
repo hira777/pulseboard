@@ -41,6 +41,14 @@ const USERS = [
     ],
   },
   {
+    email: 'auth-admin-apex@example.com',
+    password: '1111',
+    profileRole: 'admin',
+    tenants: [
+      { tenant_id: process.env.TENANT_ID_STUDIO_B, role: 'admin' }, // Apex Studio
+    ],
+  },
+  {
     email: 'auth-member-apex@example.com',
     password: '1111',
     profileRole: 'member',

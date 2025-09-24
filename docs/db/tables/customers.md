@@ -24,8 +24,9 @@
 
 ---
 
-## インデックス
-- 既定（PK のみ）。必要に応じて `email/phone` の索引を検討。
+## インデックス/制約
+- UNIQUE 制約: `(tenant_id, id)`（テナントとIDの組合せを外部参照で利用）
+- 必要に応じて `email/phone` の索引を検討。
 
 ---
 
@@ -38,4 +39,3 @@
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

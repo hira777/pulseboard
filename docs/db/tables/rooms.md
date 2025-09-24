@@ -25,8 +25,8 @@
 ---
 
 ## インデックス/制
-- 既定（PK のみ）。
-- UNIQUE 制約: `unique (tenant_id, name)`（同一テナント内で部屋名(name)の重複を禁止）
+- UNIQUE 制約: `(tenant_id, id)`（テナントとIDの組合せを外部参照で利用）
+- UNIQUE 制約: `(tenant_id, name)`（同一テナント内で部屋名(name)の重複を禁止）
 
 ---
 

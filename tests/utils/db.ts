@@ -1,5 +1,10 @@
 import { Client } from 'pg'
 
+export const PG_ERROR_CODES = {
+  FOREIGN_KEY_VIOLATION: '23503',
+  UNIQUE_VIOLATION: '23505',
+} as const
+
 /**
  * - TEST_DB_URL 環境変数を利用して PostgreSQL に接続するためのユーティリティ。
  * - Jest などのテストコードで利用しやすいように、pg.Client のインスタンスを作成して接続した状態で返す。

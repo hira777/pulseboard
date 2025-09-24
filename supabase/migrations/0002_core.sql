@@ -2,10 +2,10 @@
 -- マルチテナント予約システム（スタジオ＋機材レンタル）のコアスキーマ
 -- 事前に 0001_profiles.sql（profiles/認証ユーザー）が適用されている前提です。
 
--- Extensions -----------------------------------------------------------------
+-- UUID 生成などで利用
 create extension if not exists pgcrypto;
+--  EXCLUDE 制約（重複防止）に利用
 create extension if not exists btree_gist;
--- pgcrypto は UUID 生成などで利用、btree_gist は EXCLUDE 制約（重複防止）に必要です。
 
 -- 以降の関数/テーブル/ポリシーを public スキーマに作成するための明示設定です。
 set search_path = public;
@@ -121,7 +121,8 @@ create table if not exists public.rooms (
   open_hours jsonb, -- e.g. { mon: [{start:"09:00", end:"18:00"}], ... }
   -- open_hours … 営業時間スロット（アプリ層で解釈）。
   -- active … 予約対象として有効かどうか。
-  active boolean not null default true
+  active boolean not null default true,
+  constraint rooms_tenant_id_id_key unique (tenant_id, id)
 );
 
 alter table public.rooms
@@ -141,7 +142,8 @@ create table if not exists public.services (
   -- buffer_after_min … 後バッファ（分）。
   buffer_after_min int not null default 0,
   -- color … UI色（任意）。
-  color text
+  color text,
+  constraint services_tenant_id_id_key unique (tenant_id, id)
 );
 
 create table if not exists public.equipments (
@@ -159,7 +161,8 @@ create table if not exists public.equipments (
   stock int not null default 0,
   -- active … 取り扱い中フラグ。
   active boolean not null default true,
-  unique (tenant_id, sku)
+  constraint equipments_tenant_id_sku_key unique (tenant_id, sku),
+  constraint equipments_tenant_id_id_key unique (tenant_id, id)
 );
 
 create table if not exists public.equipment_items (
@@ -173,7 +176,17 @@ create table if not exists public.equipment_items (
   serial text,
   -- status … 個体状態。'available'|'repair'|'lost'。
   status text not null default 'available' check (status in ('available','repair','lost')),
-  unique (tenant_id, equipment_id, serial)
+  constraint equipment_items_tenant_id_id_key unique (tenant_id, id),
+  constraint equipment_items_tenant_equipment_serial_key unique (tenant_id, equipment_id, serial),
+  -- equipment_items_equipment_fk という名前の制約
+  -- foreign key (tenant_id, equipment_id) で tenant_id と equipment_id が複合外部キーであることを宣言している
+  -- そしてその外部キーの参照先が equipments の tenant_id と id である。
+  -- そのため、tenant_id と equipment_id の値は、equipments の tenant_id と id カラムに存在
+  constraint equipment_items_equipment_tenant_fk
+    foreign key (tenant_id, equipment_id)
+    references public.equipments(tenant_id, id)
+    -- 参照先の equipments の行が削除されたら、それに紐づくこのテーブルの行も削除される
+    on delete cascade
 );
 
 create table if not exists public.customers (
@@ -190,7 +203,8 @@ create table if not exists public.customers (
   -- note … メモ。
   note text,
   -- created_at … 登録時刻。
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint customers_tenant_id_id_key unique (tenant_id, id)
 );
 
 create table if not exists public.staff (
@@ -205,7 +219,8 @@ create table if not exists public.staff (
   -- skills … 任意のスキル情報（JSON）。
   skills jsonb,
   -- active … 在籍/稼働中フラグ。
-  active boolean not null default true
+  active boolean not null default true,
+  constraint staff_tenant_id_id_key unique (tenant_id, id)
 );
 
 -- Reservations ----------------------------------------------------------------
@@ -284,8 +299,17 @@ create table if not exists public.reservations (
   -- occupy only when the status blocks other bookings
   time_range tstzrange generated always as (
     make_occupy_tstzrange(start_at, end_at, buffer_before_min, buffer_after_min, status)
-  ) stored
-  constraint reservations_time_order_ck check (end_at > start_at)
+  ) stored,
+  constraint reservations_time_order_ck check (end_at > start_at),
+  constraint reservations_customer_tenant_fk foreign key (tenant_id, customer_id)
+    references public.customers(tenant_id, id),
+  constraint reservations_service_tenant_fk foreign key (tenant_id, service_id)
+    references public.services(tenant_id, id),
+  constraint reservations_room_tenant_fk foreign key (tenant_id, room_id)
+    references public.rooms(tenant_id, id) on delete restrict,
+  constraint reservations_staff_tenant_fk foreign key (tenant_id, staff_id)
+    references public.staff(tenant_id, id),
+  constraint reservations_tenant_id_id_key unique (tenant_id, id)
 );
 
 create index if not exists idx_reservations_tenant_start on public.reservations(tenant_id, start_at);
@@ -309,15 +333,21 @@ alter table public.reservations
 create table if not exists public.reservation_equipment_items (
   -- id … 割当ID。
   id uuid primary key default gen_random_uuid(),
+  -- tenant_id … 所属テナント。親予約のテナントと一致させる。
+  tenant_id uuid not null,
   -- reservation_id … 親予約。
-  reservation_id uuid not null references public.reservations(id) on delete cascade,
+  reservation_id uuid not null,
   -- equipment_item_id … 個体ID。故障/紛失時の追跡に利用。
-  equipment_item_id uuid not null references public.equipment_items(id) on delete restrict,
+  equipment_item_id uuid not null,
   -- reservation_time_range … 親予約の占有時間帯（キャンセル時は NULL）。
   reservation_time_range tstzrange,
   -- created_at … 割当日時。
   created_at timestamptz not null default now(),
-  constraint reservation_equipment_items_reservation_item_key unique (reservation_id, equipment_item_id)
+  constraint reservation_equipment_items_reservation_item_key unique (reservation_id, equipment_item_id),
+  constraint reservation_equipment_items_reservation_tenant_fk foreign key (tenant_id, reservation_id)
+    references public.reservations(tenant_id, id) on delete cascade,
+  constraint reservation_equipment_items_equipment_item_tenant_fk foreign key (tenant_id, equipment_item_id)
+    references public.equipment_items(tenant_id, id) on delete restrict
 );
 
 -- 個体の二重予約を防ぎ、予約の時間変更に追従させるためのトリガ/関数。
@@ -327,6 +357,7 @@ create table if not exists public.reservation_equipment_items (
 --    （例: make_occupy_tstzrange により confirmed/in_use のみ [start,end)＋バッファを生成）。
 --  - public.reservation_equipment_items に、予約側レンジを複製保持する
 --    reservation_time_range（tstzrange）列が存在する。
+--  - public.reservation_equipment_items に、親予約と同じ tenant_id を保持する列がある。
 --  - btree_gist 拡張が有効（EXCLUDE制約に必要）。
 -- 目的:
 --  1) 子テーブル（予約×個体）に、親予約の占有レンジを常に反映させる
@@ -342,15 +373,22 @@ language plpgsql
 as $$
 declare
   v_range tstzrange;  -- 親予約の占有レンジ（reservations.time_range）を受け取る一時変数
+  v_tenant uuid;      -- 親予約のテナントID
 begin
   -- 子行（NEW.reservation_id）に対応する親予約の time_range を取得
-  select r.time_range into v_range
+  select r.time_range, r.tenant_id into v_range, v_tenant
   from public.reservations r
   where r.id = new.reservation_id;
 
   -- 取得した占有レンジを子行の reservation_time_range に反映
   -- 例: 親が canceled 等で占有しない場合は NULL が入る（EXCLUDEの判定対象外になる）
   new.reservation_time_range := v_range;
+  if new.tenant_id is null then
+    new.tenant_id := v_tenant;
+  elsif new.tenant_id <> v_tenant then
+    raise exception 'reservation_equipment_items tenant mismatch'
+      using errcode = '23514';
+  end if;
   return new;
 end;
 $$;
@@ -422,13 +460,16 @@ create table if not exists public.messages (
   -- tenant_id … 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- reservation_id … 紐づく予約。予約削除で連鎖削除。
-  reservation_id uuid not null references public.reservations(id) on delete cascade,
+  reservation_id uuid not null,
   -- sender_profile_id … 送信者（auth.users.id）。
   sender_profile_id uuid not null references auth.users(id) on delete cascade,
   -- body … 本文。
   body text not null,
   -- created_at … 送信時刻。
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint messages_reservation_tenant_fk foreign key (tenant_id, reservation_id)
+    references public.reservations(tenant_id, id) on delete cascade,
+  constraint messages_tenant_id_id_key unique (tenant_id, id)
 );
 
 create table if not exists public.audit_logs (
@@ -514,7 +555,3 @@ for all using (app_is_tenant_member(tenant_id)) with check (app_is_tenant_member
 
 create policy audit_logs_select on public.audit_logs for select using (app_is_tenant_admin(tenant_id));
 create policy audit_logs_insert on public.audit_logs for insert with check (app_is_tenant_member(tenant_id));
-
--- Notes -----------------------------------------------------------------------
--- 備考: 機材個体の重複予約は reservation_equipment_items_no_overlap で DB 排他済み。
--- SKU 単位での集計値が必要な場合はビュー等で補助する想定です。
