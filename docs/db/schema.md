@@ -87,7 +87,7 @@ erDiagram
   - `equipment_items`: 機材個体（シリアル）。`(tenant_id, equipment_id, serial)` と `(tenant_id, id)` で整合性を確保。親 SKU とは複合外部キー。
 - Operational
   - `customers`: 顧客。メール・電話は重複許容（ユースケース次第で将来制約）。`(tenant_id, id)` で一意。
-  - `staff`: スタッフ。`profile_id` は任意で `auth.users` に紐付け。`(tenant_id, id)` で一意。
+  - `staff`: スタッフ。`profile_id` はテナント所属ユーザー必須。`(tenant_id, id)` で一意。
   - `reservations`: 予約。`time_range` 生成列＋ EXCLUDE 制約で「部屋 × 時間帯」の重複を DB で抑止。顧客・サービス・部屋・スタッフとは `(tenant_id, xxx_id)` の複合外部キーでテナント一致を保証。
   - `reservation_equipment_items`: 予約と機材個体の多対多。個体×時間帯の EXCLUDE 制約で二重貸出を防止し、親予約と同じ `tenant_id` を保持する。
 - Exceptions / Logs

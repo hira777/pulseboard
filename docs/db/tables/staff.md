@@ -2,7 +2,7 @@
 
 ## 概要
 - **テーブル名**: `public.staff`
-- **目的**: スタッフ情報を管理。任意で `auth.users` と紐付け可能。
+- **目的**: スタッフ情報を管理。該当テナントの認証ユーザーと必ず紐付ける。
 - **主な利用画面/API**: スタッフ管理、予約アサイン。
 - **関連（ER）**:
   - `tenants(1) ─ (N) staff`
@@ -16,7 +16,7 @@
 | --- | --- | :-: | --- | --- | --- |
 | `id` | `uuid` | ✔︎ | `gen_random_uuid()` | スタッフID | `primary key` |
 | `tenant_id` | `uuid` | ✔︎ |  | 所属テナント | `references tenants(id) on delete cascade` |
-| `profile_id` | `uuid` |  |  | `auth.users` 参照（任意） | `references auth.users(id) on delete set null` |
+| `profile_id` | `uuid` | ✔︎ |  | テナント所属ユーザー | `(tenant_id, profile_id)` → `tenant_users(tenant_id, profile_id)` on delete cascade |
 | `name` | `text` | ✔︎ |  | 表示名 |  |
 | `skills` | `jsonb` |  |  | スキル情報 |  |
 | `active` | `boolean` | ✔︎ | `true` | 在籍/稼働中 |  |

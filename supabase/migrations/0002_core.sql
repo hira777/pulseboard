@@ -212,14 +212,16 @@ create table if not exists public.staff (
   id uuid primary key default gen_random_uuid(),
   -- tenant_id … 所属テナント。
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- profile_id … auth.users への参照（任意）。
-  profile_id uuid references auth.users(id) on delete set null,
+  -- profile_id … テナント所属ユーザー（必須）。
+  profile_id uuid not null,
   -- name … 表示名。
   name text not null,
   -- skills … 任意のスキル情報（JSON）。
   skills jsonb,
   -- active … 在籍/稼働中フラグ。
   active boolean not null default true,
+  constraint staff_profile_tenant_fk foreign key (tenant_id, profile_id)
+    references public.tenant_users(tenant_id, profile_id) on delete cascade,
   constraint staff_tenant_id_id_key unique (tenant_id, id)
 );
 
@@ -461,14 +463,16 @@ create table if not exists public.messages (
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- reservation_id … 紐づく予約。予約削除で連鎖削除。
   reservation_id uuid not null,
-  -- sender_profile_id … 送信者（auth.users.id）。
-  sender_profile_id uuid not null references auth.users(id) on delete cascade,
+  -- sender_profile_id … 送信者（テナント所属ユーザー）。
+  sender_profile_id uuid not null,
   -- body … 本文。
   body text not null,
   -- created_at … 送信時刻。
   created_at timestamptz not null default now(),
   constraint messages_reservation_tenant_fk foreign key (tenant_id, reservation_id)
     references public.reservations(tenant_id, id) on delete cascade,
+  constraint messages_sender_tenant_fk foreign key (tenant_id, sender_profile_id)
+    references public.tenant_users(tenant_id, profile_id) on delete cascade,
   constraint messages_tenant_id_id_key unique (tenant_id, id)
 );
 

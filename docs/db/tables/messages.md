@@ -6,7 +6,7 @@
 - **主な利用画面/API**: 予約詳細・運用コンソール。
 - **関連（ER）**:
   - `reservations(1) ─ (N) messages`
-  - `auth.users(1) ─ (N) messages`（送信者）
+- `tenant_users(1) ─ (N) messages`（送信者）
 - **テナント整合性**: 親予約と同じ `tenant_id` を保持し、他テナントの予約には紐付けできない。
 
 ---
@@ -18,7 +18,7 @@
 | `id` | `uuid` | ✔︎ | `gen_random_uuid()` | メッセージID | `primary key` |
 | `tenant_id` | `uuid` | ✔︎ |  | 所属テナント | `references tenants(id) on delete cascade` |
 | `reservation_id` | `uuid` | ✔︎ |  | 紐づく予約 | `(tenant_id, reservation_id)` → `reservations(tenant_id, id)` on delete cascade |
-| `sender_profile_id` | `uuid` | ✔︎ |  | 送信者 | `references auth.users(id) on delete cascade` |
+| `sender_profile_id` | `uuid` | ✔︎ |  | 送信者 | `(tenant_id, sender_profile_id)` → `tenant_users(tenant_id, profile_id)` on delete cascade |
 | `body` | `text` | ✔︎ |  | 本文 |  |
 | `created_at` | `timestamptz` | ✔︎ | `now()` | 送信時刻 |  |
 

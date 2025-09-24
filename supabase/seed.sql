@@ -49,11 +49,11 @@ values
 on conflict do nothing;
 
 -- スタッフ
-insert into public.staff (tenant_id, name, active)
+insert into public.staff (tenant_id, profile_id, name, active)
 values
-  ('11111111-1111-1111-1111-111111111111', 'Akari Tanaka', true),
-  ('11111111-1111-1111-1111-111111111111', 'Shun Kato', true),
-  ('11111111-1111-1111-1111-111111111112', 'Mina Hayashi', true)
+  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001', 'Akari Tanaka', true),
+  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000002', 'Shun Kato', true),
+  ('11111111-1111-1111-1111-111111111112', '00000000-0000-0000-0000-000000000003', 'Mina Hayashi', true)
 on conflict do nothing;
 
 -- 顧客
