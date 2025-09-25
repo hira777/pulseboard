@@ -33,7 +33,7 @@ alter table public.tenants enable row level security;
 
 -- ユーザーのテナント所属とロールを管理するテーブル
 create table if not exists public.tenant_users (
-  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- profile_id: ユーザーのID(auth.users.id)。参照先のユーザー削除時は、参照している tenant_users レコードも削除。
   profile_id uuid not null references auth.users(id) on delete cascade,
@@ -121,7 +121,7 @@ create policy tenant_users_admin_write
 create table if not exists public.rooms (
   -- id 部屋ID（UUID）。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- name: 部屋名。
   name text not null,
@@ -144,7 +144,7 @@ create table if not exists public.rooms (
 create table if not exists public.services (
   -- id: サービス（メニュー）ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- name: サービス名。
   name text not null,
@@ -164,7 +164,7 @@ create table if not exists public.services (
 create table if not exists public.equipments (
   -- id: SKU の ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- sku: SKU(ユニーク)。
   sku text not null,
@@ -186,9 +186,9 @@ create table if not exists public.equipments (
 create table if not exists public.equipment_items (
   -- id: 機材個体ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- equipment_id: 紐づいているSKUのID(equipments.id)。参照先の equipments のレコードが削除時されたら、参照元であるこのテーブルのレコードも削除される
+  -- equipment_id: 紐づいているSKUのID(equipments.id)。参照先の equipments のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   equipment_id uuid not null references public.equipments(id) on delete cascade,
   -- serial: 個体シリアル（ユニーク）。
   serial text,
@@ -211,7 +211,7 @@ create table if not exists public.equipment_items (
 create table if not exists public.customers (
   -- id: 顧客ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   -- name: 顧客名。
   name text not null,
@@ -221,17 +221,19 @@ create table if not exists public.customers (
   phone text not null,
   -- note: メモ。
   note text,
-  -- created_at: 登録時刻。
+  -- created_at: レコード作成日時、自動で現在時刻が入る
   created_at timestamptz not null default now(),
+  -- 外部キー参照を可能にするためのユニーク制約
   constraint customers_tenant_id_id_key unique (tenant_id, id)
 );
 
+-- スタッフ情報を管理するテーブル
 create table if not exists public.staff (
   -- id: スタッフID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- profile_id: テナント所属ユーザー。
+  -- profile_id: tenant_users 上のスタッフのID(tenant_users.id)。
   profile_id uuid not null,
   -- name: 表示名。
   name text not null,
@@ -239,9 +241,15 @@ create table if not exists public.staff (
   skills jsonb,
   -- active: 在籍/稼働中フラグ。
   active boolean not null default true,
-  constraint staff_profile_tenant_fk foreign key (tenant_id, profile_id)
-    references public.tenant_users(tenant_id, profile_id) on delete cascade,
-  constraint staff_tenant_id_id_key unique (tenant_id, id)
+  -- 外部キー参照を可能にするためのユニーク制約
+  constraint staff_tenant_id_id_key unique (tenant_id, id),
+  -- 複合外部キー
+  -- staff の tenant_id, profile_id が tenant_users の tenant_id, profile_id に存在することを保証する。
+  -- 参照先の tenant_users のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
+  constraint staff_profile_tenant_fk
+    foreign key (tenant_id, profile_id)
+    references public.tenant_users(tenant_id, profile_id)
+    on delete cascade
 );
 
 -- ===================================================================
@@ -282,20 +290,20 @@ as $$
     )
   else null end
 $$;
--- 予約テーブル。time_range（生成列）に前後バッファを含む占有時間帯を保持します。
--- ステータスが confirmed/in_use のときのみ重複判定の対象になります。
+
+-- 予約情報を管理するテーブル
 create table if not exists public.reservations (
   -- id: 予約ID。
   id uuid primary key default gen_random_uuid(),
-  -- tenant_id: 所属テナント。
+  -- tenant_id: 所属先テナントのID(tenants.id)。参照先の tenants のレコードが削除されたら、参照元であるこのテーブルのレコードも削除される
   tenant_id uuid not null references public.tenants(id) on delete cascade,
-  -- customer_id: 予約の顧客。削除時は NULL。
+  -- customer_id: 予約した顧客のID(customers.id)。参照先の customers のレコードが削除されたら、参照元であるこのテーブルのカラムは NULL になる。
   customer_id uuid references public.customers(id) on delete set null,
-  -- service_id: 選択サービス。削除時は NULL。
+  -- service_id: 予約したサービスのID(services.id)。参照先の services のレコードが削除されたら、参照元であるこのテーブルのカラムは NULL になる。
   service_id uuid references public.services(id) on delete set null,
-  -- room_id: 対象部屋。参照先に予約があると部屋は削除不可（restrict）。
+  -- room_id: 予約した部屋のID(rooms.id)。参照先の rooms のレコードが削除されそうなった時、参照元でその room_id を使っているレコードが存在する場合、rooms 側の削除がエラーになる。
   room_id uuid not null references public.rooms(id) on delete restrict,
-  -- staff_id: 担当スタッフ。削除時は NULL。
+  -- staff_id: 担当スタッフのID(staff.id)。参照先の staff のレコードが削除されたら、参照元であるこのテーブルのカラムは NULL になる。
   staff_id uuid references public.staff(id) on delete set null,
   -- start_at: 開始日時。
   start_at timestamptz not null,
@@ -328,26 +336,23 @@ create table if not exists public.reservations (
     references public.rooms(tenant_id, id) on delete restrict,
   constraint reservations_staff_tenant_fk foreign key (tenant_id, staff_id)
     references public.staff(tenant_id, id),
-  constraint reservations_tenant_id_id_key unique (tenant_id, id)
+  constraint reservations_tenant_id_id_key unique (tenant_id, id),
+  -- 同一 room_id で time_range が重なる予約を EXCLUDE 制約で排他する（NULL は対象外）。
+  constraint reservations_no_overlap_per_room
+    exclude using gist (
+      room_id with =,
+      time_range with &&
+    ),
+  -- 同一 staff_id で time_range が重なる予約を EXCLUDE 制約で排他する（NULL は対象外）。
+  constraint reservations_no_overlap_per_staff
+    exclude using gist (
+      staff_id with =,
+      time_range with &&
+    )
 );
 
 create index if not exists idx_reservations_tenant_start on public.reservations(tenant_id, start_at);
 create index if not exists idx_reservations_room_start on public.reservations(room_id, start_at);
-
--- 同一 room_id で time_range が重なる予約を EXCLUDE 制約で排他します（NULL は対象外）。
-alter table public.reservations
-  add constraint reservations_no_overlap_per_room
-  exclude using gist (
-    room_id with =,
-    time_range with &&
-  );
-
-alter table public.reservations
-  add constraint reservations_no_overlap_per_staff
-  exclude using gist (
-    staff_id with =,
-    time_range with &&
-  );
 
 create table if not exists public.reservation_equipment_items (
   -- id: 割当ID。
