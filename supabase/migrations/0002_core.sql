@@ -317,26 +317,20 @@ create table if not exists public.reservations (
   buffer_after_min int not null default 0,
   -- note: 備考。
   note text,
-  -- created_by: 作成者（auth.users）。
+  -- created_by: 作成者(認証ユーザー)のID。
   created_by uuid references auth.users(id) on delete set null,
   -- updated_at: 更新時刻。既定 now()。アプリ層で適宜更新。
   updated_at timestamptz not null default now(),
   -- version: 将来の楽観的ロック等に利用可能（任意）。
   version int not null default 1,
-  -- occupy only when the status blocks other bookings
+  -- time_range(tstzrange型): 予約の占有時間範囲
+  -- generated always as (...) stored で (...)の式から自動計算される値を格納する
+  -- make_occupy_tstzrange の実行結果が保存されるため、['2025-10-01 09:45', '2025-10-01 12:15')のような値が自動保存される。
   time_range tstzrange generated always as (
     make_occupy_tstzrange(start_at, end_at, buffer_before_min, buffer_after_min, status)
   ) stored,
+  -- レコードが追加・更新されるときに end_at が start_at より後であることを確認する。条件を満たさないとエラーになる。
   constraint reservations_time_order_ck check (end_at > start_at),
-  constraint reservations_customer_tenant_fk foreign key (tenant_id, customer_id)
-    references public.customers(tenant_id, id),
-  constraint reservations_service_tenant_fk foreign key (tenant_id, service_id)
-    references public.services(tenant_id, id),
-  constraint reservations_room_tenant_fk foreign key (tenant_id, room_id)
-    references public.rooms(tenant_id, id) on delete restrict,
-  constraint reservations_staff_tenant_fk foreign key (tenant_id, staff_id)
-    references public.staff(tenant_id, id),
-  constraint reservations_tenant_id_id_key unique (tenant_id, id),
   -- 同一 room_id で time_range が重なる予約を EXCLUDE 制約で排他する（NULL は対象外）。
   constraint reservations_no_overlap_per_room
     exclude using gist (
@@ -348,12 +342,27 @@ create table if not exists public.reservations (
     exclude using gist (
       staff_id with =,
       time_range with &&
-    )
+    ),
+  -- 外部キー参照を可能にするためのユニーク制約
+  constraint reservations_tenant_id_id_key unique (tenant_id, id),
+  -- このテーブルの tenant_id, customer_id が customers の tenant_id, id に存在することを保証する。
+  constraint reservations_customer_tenant_fk foreign key (tenant_id, customer_id)
+    references public.customers(tenant_id, id),
+  -- このテーブルの tenant_id, service_id が services の tenant_id, id に存在することを保証する。
+  constraint reservations_service_tenant_fk foreign key (tenant_id, service_id)
+    references public.services(tenant_id, id),
+  -- このテーブルの tenant_id, room_id が rooms の tenant_id, id に存在することを保証する。
+  constraint reservations_room_tenant_fk foreign key (tenant_id, room_id)
+    references public.rooms(tenant_id, id) on delete restrict,
+  -- このテーブルの tenant_id, staff_id が staff の tenant_id, id に存在することを保証する。
+  constraint reservations_staff_tenant_fk foreign key (tenant_id, staff_id)
+    references public.staff(tenant_id, id)
 );
 
 create index if not exists idx_reservations_tenant_start on public.reservations(tenant_id, start_at);
 create index if not exists idx_reservations_room_start on public.reservations(room_id, start_at);
 
+-- 予約に割り当てられている機材情報を管理するテーブル
 create table if not exists public.reservation_equipment_items (
   -- id: 割当ID。
   id uuid primary key default gen_random_uuid(),
@@ -367,11 +376,23 @@ create table if not exists public.reservation_equipment_items (
   reservation_time_range tstzrange,
   -- created_at: 割当日時。
   created_at timestamptz not null default now(),
+  -- 予約に同じ機材が二重に割り当てられるのを防ぐユニーク制約
   constraint reservation_equipment_items_reservation_item_key unique (reservation_id, equipment_item_id),
+  -- このテーブルの tenant_id, reservation_id が reservations の tenant_id, id に存在することを保証する。
   constraint reservation_equipment_items_reservation_tenant_fk foreign key (tenant_id, reservation_id)
     references public.reservations(tenant_id, id) on delete cascade,
+  -- このテーブルの tenant_id, equipment_item_id が equipment_items の tenant_id, id に存在することを保証する。
   constraint reservation_equipment_items_equipment_item_tenant_fk foreign key (tenant_id, equipment_item_id)
     references public.equipment_items(tenant_id, id) on delete restrict
+  -- 同一個体について、時間帯が重なる割当（reservation_time_range の &&）を禁止
+  -- ・'[)' 片側閉区間を想定（tstzrangeのデフォルト）。終端の一致は重ならない扱い。
+  -- ・reservation_time_range が NULL の行は判定対象外（取消・非占有など）。
+  constraint reservation_equipment_items_no_overlap
+    exclude using gist (
+      equipment_item_id with =,
+      reservation_time_range with &&
+    );
+
 );
 
 -- 個体の二重予約を防ぎ、予約の時間変更に追従させるためのトリガ/関数。
@@ -442,16 +463,6 @@ create trigger reservations_sync_equipment_items_time_range
 after update of start_at, end_at, buffer_before_min, buffer_after_min, status on public.reservations
 for each row
 execute function reservations_sync_equipment_items_time_range();
-
--- 同一個体について、時間帯が重なる割当（reservation_time_range の &&）を禁止
--- ・'[)' 片側閉区間を想定（tstzrangeのデフォルト）。終端の一致は重ならない扱い。
--- ・reservation_time_range が NULL の行は判定対象外（取消・非占有など）。
-alter table public.reservation_equipment_items
-  add constraint reservation_equipment_items_no_overlap
-  exclude using gist (
-    equipment_item_id with =,
-    reservation_time_range with &&
-  );
 
 -- 参照系の実行計画を安定させるための補助インデックス
 create index if not exists idx_reservation_equipment_items_reservation on public.reservation_equipment_items(reservation_id);
