@@ -383,93 +383,76 @@ create table if not exists public.reservation_equipment_items (
     references public.reservations(tenant_id, id) on delete cascade,
   -- このテーブルの tenant_id, equipment_item_id が equipment_items の tenant_id, id に存在することを保証する。
   constraint reservation_equipment_items_equipment_item_tenant_fk foreign key (tenant_id, equipment_item_id)
-    references public.equipment_items(tenant_id, id) on delete restrict
-  -- 同一個体について、時間帯が重なる割当（reservation_time_range の &&）を禁止
-  -- ・'[)' 片側閉区間を想定（tstzrangeのデフォルト）。終端の一致は重ならない扱い。
-  -- ・reservation_time_range が NULL の行は判定対象外（取消・非占有など）。
+    references public.equipment_items(tenant_id, id) on delete restrict,
+  -- 同一個体(equipment_item_id with =)の時間帯が重なる割当（reservation_time_range with &&）を禁止する制約
+  -- ・'[)' 片側閉区間を想定（tstzrangeのデフォルト）。終端の一致は重ならない。
+  -- ・reservation_time_range が NULL のレコードは判定対象外(PostgreSQL仕様)。
   constraint reservation_equipment_items_no_overlap
     exclude using gist (
       equipment_item_id with =,
       reservation_time_range with &&
-    );
-
+    )
 );
 
--- 個体の二重予約を防ぎ、予約の時間変更に追従させるためのトリガ/関数。
--- -----------------------------------------------------------------------------
--- 前提:
---  - public.reservations に、占有レンジを表す生成列 time_range（tstzrange）がある
---    （例: make_occupy_tstzrange により confirmed/in_use のみ [start,end)＋バッファを生成）。
---  - public.reservation_equipment_items に、予約側レンジを複製保持する
---    reservation_time_range（tstzrange）列が存在する。
---  - public.reservation_equipment_items に、親予約と同じ tenant_id を保持する列がある。
---  - btree_gist 拡張が有効（EXCLUDE制約に必要）。
--- 目的:
---  1) 子テーブル（予約×個体）に、親予約の占有レンジを常に反映させる
---  2) 同一個体（equipment_item_id）で時間帯が重なる割当をDBで排他（EXCLUDE）
--- 留意:
---  - reservation_time_range が NULL の行は EXCLUDE の判定対象外（PostgreSQL仕様）。
---    status に応じて NULL を許容するポリシーか、NOT NULL 制約で常に判定対象にするかを決める。
---  - AFTER トリガで親の変更を子に一括反映。BEFORE トリガで子行挿入時にも親の値をコピー。
--- -----------------------------------------------------------------------------
+-- reservations(親)の時間とテナントIDをreservation_equipment_items(子)にコピーするトリガー関数
 create or replace function reservation_equipment_items_apply_time_range()
-returns trigger
-language plpgsql
-as $$
-declare
-  v_range tstzrange;  -- 親予約の占有レンジ（reservations.time_range）を受け取る一時変数
-  v_tenant uuid;      -- 親予約のテナントID
-begin
-  -- 子行（NEW.reservation_id）に対応する親予約の time_range を取得
-  select r.time_range, r.tenant_id into v_range, v_tenant
-  from public.reservations r
-  where r.id = new.reservation_id;
+  returns trigger
+  language plpgsql
+  as $$
+  -- 一時変数を定義
+  declare
+    v_range tstzrange;  -- 親予約の占有レンジ（reservations.time_range）を受け取る一時変数
+    v_tenant uuid;      -- 親予約のテナントID（reservations.tenant_id）を受け取る一時変数
+  begin
+    -- 更新した reservation_equipment_items.reservation_id に対応する親予約の time_range を取得
+    select r.time_range, r.tenant_id into v_range, v_tenant
+    from public.reservations r
+    where r.id = NEW.reservation_id;
 
-  -- 取得した占有レンジを子行の reservation_time_range に反映
-  -- 例: 親が canceled 等で占有しない場合は NULL が入る（EXCLUDEの判定対象外になる）
-  new.reservation_time_range := v_range;
-  if new.tenant_id is null then
-    new.tenant_id := v_tenant;
-  elsif new.tenant_id <> v_tenant then
-    raise exception 'reservation_equipment_items tenant mismatch'
-      using errcode = '23514';
-  end if;
-  return new;
-end;
-$$;
+    -- 取得した占有レンジを reservation_equipment_items.reservation_time_range に反映
+    NEW.reservation_time_range := v_range;
+    -- reservation_equipment_items.tenant_id が NULL なら親予約の tenant_id を自動セット
+    if NEW.tenant_id is null then
+      NEW.tenant_id := v_tenant;
+    end if;
+    return NEW;
+  end;
+  $$;
 
--- 子テーブル側: 挿入/更新のたびに親予約の占有レンジをコピーして整合を保つ
+-- reservation_equipment_items の reservation_id, tenant_id が更新/挿入される直前に reservation_equipment_items_apply_time_range を呼ぶトリガー
 create trigger reservation_equipment_items_set_time_range
-before insert or update on public.reservation_equipment_items
-for each row
-execute function reservation_equipment_items_apply_time_range();
+  before insert or update of reservation_id, tenant_id
+  on public.reservation_equipment_items
+  for each row
+  execute function reservation_equipment_items_apply_time_range();
 
+-- reservations(親)の更新に追随して、reservation_equipment_items(子)の占有時間帯をまとめて更新するトリガー関数
 create or replace function reservations_sync_equipment_items_time_range()
-returns trigger
-language plpgsql
-as $$
-begin
-  -- 親予約の時間・バッファ・状態の変更後に、紐づく子行の reservation_time_range を一括更新
-  -- NEW.time_range は reservations の生成列（更新後の占有レンジ）
-  update public.reservation_equipment_items rei
-  set reservation_time_range = new.time_range
-  where rei.reservation_id = new.id;
-  return null;  -- AFTERトリガでは戻り値は無視されるため NULL を返す
-end;
-$$;
+  returns trigger
+  language plpgsql
+  as $$
+  begin
+    -- 更新した占有レンジを、紐づく reservation_equipment_items.reservation_time_range に反映する
+    update public.reservation_equipment_items rei
+    set reservation_time_range = NEW.time_range
+    where rei.reservation_id = NEW.id;
+    -- AFTERトリガー関数では、戻り値は使われないが戻り値は必要なので慣習的に NULL を返す。
+    return null;
+  end;
+  $$;
 
--- 親テーブル側: 時刻・バッファ・状態が変わったときに子へ反映
+-- reservations の 時刻・バッファ・状態が更新された直後に reservations_sync_equipment_items_time_range を呼ぶトリガー
 create trigger reservations_sync_equipment_items_time_range
-after update of start_at, end_at, buffer_before_min, buffer_after_min, status on public.reservations
-for each row
-execute function reservations_sync_equipment_items_time_range();
+  after update of start_at, end_at, buffer_before_min, buffer_after_min, status
+  on public.reservations
+  for each row
+  execute function reservations_sync_equipment_items_time_range();
 
--- 参照系の実行計画を安定させるための補助インデックス
+-- 予約IDや機材アイテムIDで検索・JOINする処理を高速化するためのインデックス
 create index if not exists idx_reservation_equipment_items_reservation on public.reservation_equipment_items(reservation_id);
 create index if not exists idx_reservation_equipment_items_equipment_item on public.reservation_equipment_items(equipment_item_id);
 
--- Calendar exceptions ----------------------------------------------------------
--- 休業日/メンテナンス/私用など例外時間帯。scope と target_id で適用範囲を特定します。
+-- 休業日/メンテナンス/私用など例外時間帯を管理するテーブル
 create table if not exists public.calendar_exceptions (
   -- id: 例外ID。
   id uuid primary key default gen_random_uuid(),
@@ -487,7 +470,6 @@ create table if not exists public.calendar_exceptions (
   note text
 );
 
--- Messaging & audit ------------------------------------------------------------
 -- 内部メッセージと監査ログ。誰が/何を/いつを記録します。
 create table if not exists public.messages (
   -- id: メッセージID。
