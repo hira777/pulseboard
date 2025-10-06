@@ -27,21 +27,53 @@
 
 ## バリデーション・競合チェック詳細タスク
 
-- [ ] 時間帯検証タスクの洗い出し — `startAt`/`endAt` の前後関係、15 分刻み、タイムゾーン変換をユーティリティ化する（`toUtcRange`, `validateSlotIncrement` など）。
-- [ ] 営業時間・例外適用タスク — `rooms.open_hours` と `calendar_exceptions` を突合し、占有区間を差し引く処理フローを予約作成用に整理する。
-- [ ] バッファ反映タスク — サービス既定値と `bufferOverride` を合成し、占有時間帯を算出するユースケースを定義する。
-- [ ] 機材在庫タスク — SKU 存在チェック、個体自動割当、既存貸出との衝突判定をパーツ化する。
-- [ ] スタッフ重複タスク — 指定スタッフの既存予約・例外との重複判定ロジックを分解し、複数スタッフ指定時の方針を追記する。
-- [ ] 顧客/リソース有効性タスク — `rooms.active`, `customers.status`, `services` 等のアクティブ確認をまとめ、エラーコードとの対応表を作る。
+- [x] 時間帯検証タスクの洗い出し — `startAt`/`endAt` の前後関係、15 分刻み、タイムゾーン変換をユーティリティ化する（`toUtcRange`, `validateSlotIncrement` など）。
+- [x] 営業時間・例外適用タスク — `rooms.open_hours` と `calendar_exceptions` を突合し、占有区間を差し引く処理フローを予約作成用に整理する。
+- [x] バッファ反映タスク — サービス既定値と `bufferOverride` を合成し、占有時間帯を算出するユースケースを定義する。
+- [x] 機材在庫タスク — SKU 存在チェック、個体自動割当、既存貸出との衝突判定をパーツ化する。
+- [x] スタッフ重複タスク — 指定スタッフの既存予約・例外との重複判定ロジックを分解し、複数スタッフ指定時の方針を追記する。
+- [x] 顧客/リソース有効性タスク — `rooms.active`, `customers.status`, `services` 等のアクティブ確認をまとめ、エラーコードとの対応表を作る。
 
 ## 例外・在庫・スタッフ重複の整理メモ
 
-- [ ] `calendar_exceptions` の適用順序と `target_id=null` の扱いを明文化し、`RESERVATIONS_CLOSED_SCOPE` を返す条件（テナント/部屋/機材/スタッフ単位）を記録する。
-- [ ] 在庫判定の前提を整理（SKU 在庫 vs 個体管理、`reservation_equipment_items` の EXCLUDE 制約・トリガーを確認）し、必要なデータ取得 API をメモする。
-- [ ] スタッフ重複チェックで再利用するデータ（`reservations.time_range`, `staff_id`）を取得するクエリやインデックスを確認し、複数スタッフ指定時の扱いを追記する。
+- [x] `calendar_exceptions` の適用順序と `target_id=null` の扱いを明文化し、`RESERVATIONS_CLOSED_SCOPE` を返す条件（テナント/部屋/機材/スタッフ単位）を記録する。
+- [x] 在庫判定の前提を整理（SKU 在庫 vs 個体管理、`reservation_equipment_items` の EXCLUDE 制約・トリガーを確認）し、必要なデータ取得 API をメモする。
+- [x] スタッフ重複チェックで再利用するデータ（`reservations.time_range`, `staff_id`）を取得するクエリやインデックスを確認し、複数スタッフ指定時の扱いを追記する。
 
 ## availability コード再利用メモ
 
-- [ ] 再利用予定の関数を確認する — `src/features/availability/server.ts` の `buildCalendarContext`, `buildReservationContext`, `buildEquipmentAvailabilityContext`, `subtractIntervals`, `parsePgRange` などを共通化候補として列挙し、移動先モジュール案をまとめる。
-- [ ] 予約可能枠専用で不要になる処理を特定する — `listAvailability`, `buildCandidateSlotsForRooms`, `finalizeSlots`, `generateCandidateSlots` などを削除/分解する際の注意点（テスト影響・共有定数）をメモする。
-- [ ] 既存ファイルの型定義（`NormalizedAvailabilityInput`, `CandidateSlot` など）をどこまで流用するか判断し、残す/移す/破棄の方針と依存箇所を洗い出す。
+- [x] 再利用予定の関数を確認する — `src/features/availability/server.ts` の `buildCalendarContext`, `buildReservationContext`, `buildEquipmentAvailabilityContext`, `subtractIntervals`, `parsePgRange` などを共通化候補として列挙し、移動先モジュール案をまとめる。
+- [x] 予約可能枠専用で不要になる処理を特定する — `listAvailability`, `buildCandidateSlotsForRooms`, `finalizeSlots`, `generateCandidateSlots` などを削除/分解する際の注意点（テスト影響・共有定数）をメモする。
+- [x] 既存ファイルの型定義（`NormalizedAvailabilityInput`, `CandidateSlot` など）をどこまで流用するか判断し、残す/移す/破棄の方針と依存箇所を洗い出す。
+
+## 予約作成ロジック設計メモ
+
+1. **入力受理とバリデーション**
+   - 実装候補ファイル: `src/features/reservations/validation.ts`（新規）。
+   - 役割: Zod スキーマ（`ReservationCreateInputSchema`）で DTO を検証し、`toReservationCommand` で内部形式へ正規化。
+   - 再利用予定: `minutesToMs`, `extractTimezoneOffsetMinutes`（availability から移植）。新規ユーティリティとして `validateSlotIncrement`, `ensureRoomActive` などを追加。
+
+2. **例外日・営業時間チェック**
+   - 実装候補ファイル: `src/features/reservations/calendar.ts`。
+   - 処理手順: `buildCalendarContext` を共通化し、テナント→部屋→機材→スタッフの順で `RESERVATIONS_CLOSED_SCOPE` 相当の判定を実装。
+   - 補足: `calendar_exceptions` クエリは `overlaps(range, :requestedRange)`、休業時は理由を `details.conflicts` に含める。
+
+3. **競合判定（部屋 / 機材 / スタッフ）**
+   - 実装候補ファイル: `src/features/reservations/conflicts.ts`。
+   - 部屋: `reservations` の EXCLUDE 制約を補助するため、`buildRoomReservationMap` を利用し占有範囲を比較。
+   - 機材: `buildEquipmentAvailabilityContext` を共通化し、SKU/個体の空きと例外を確認。必要数を確保できない場合は `RESERVATIONS_CONFLICT`。
+   - スタッフ: `buildReservationContext` の `staffReservationIntervals` を活用し、複数 `staffIds` 指定時は全員分チェック。
+
+4. **永続化フロー**
+   - 実装候補ファイル: `src/features/reservations/persistence.ts`。
+   - 手順: Supabase トランザクション（`supabase.rpc('begin')` 相当）で予約登録→機材割当→その他リンクテーブル処理。失敗時はロールバック。
+   - Idempotency: `reservations` に `idempotency_key` 列を追加する案、または補助テーブル `reservation_requests`（idempotency-key, payload hash, reservation_id）を設計。
+
+5. **API エントリーポイント**
+   - 実装候補ファイル: `src/features/reservations/create.ts`（Server Action）。
+   - 手順: 1〜4 を順に呼び出し、成功時は `docs/api/reservations.md` のレスポンス形式で返却。404/409/422 エラーは `throw new ReservationError({...})` で統一。
+
+6. **テスト設計**
+   - 新規ファイル: `tests/features/reservations/create.test.ts`。
+   - ケース: 正常系（予約成功）、候補なし（例外日・在庫不足）、409（部屋 or 機材重複）、境界チェック（15分刻み、バッファ上書き）。
+   - モック: Supabase クエリをスタブ化するヘルパーを `tests/helpers/supabaseMock.ts` として用意。
