@@ -24,3 +24,24 @@
 - [ ] 上記チェックリストを PROJECT_STATUS.md の該当タスクと紐づけ、進捗更新の基準にする。
 - [ ] API 仕様ドラフトレビュー後、バリデーション・競合チェックの具体的な実装タスクを Issue 化する。
 - [ ] テスト計画をもとに `tests/features/reservations/` 配下のテストファイル構成案を作成する。
+
+## バリデーション・競合チェック詳細タスク
+
+- [ ] 時間帯検証タスクの洗い出し — `startAt`/`endAt` の前後関係、15 分刻み、タイムゾーン変換をユーティリティ化する（`toUtcRange`, `validateSlotIncrement` など）。
+- [ ] 営業時間・例外適用タスク — `rooms.open_hours` と `calendar_exceptions` を突合し、占有区間を差し引く処理フローを予約作成用に整理する。
+- [ ] バッファ反映タスク — サービス既定値と `bufferOverride` を合成し、占有時間帯を算出するユースケースを定義する。
+- [ ] 機材在庫タスク — SKU 存在チェック、個体自動割当、既存貸出との衝突判定をパーツ化する。
+- [ ] スタッフ重複タスク — 指定スタッフの既存予約・例外との重複判定ロジックを分解し、複数スタッフ指定時の方針を追記する。
+- [ ] 顧客/リソース有効性タスク — `rooms.active`, `customers.status`, `services` 等のアクティブ確認をまとめ、エラーコードとの対応表を作る。
+
+## 例外・在庫・スタッフ重複の整理メモ
+
+- [ ] `calendar_exceptions` の適用順序と `target_id=null` の扱いを明文化し、`RESERVATIONS_CLOSED_SCOPE` を返す条件（テナント/部屋/機材/スタッフ単位）を記録する。
+- [ ] 在庫判定の前提を整理（SKU 在庫 vs 個体管理、`reservation_equipment_items` の EXCLUDE 制約・トリガーを確認）し、必要なデータ取得 API をメモする。
+- [ ] スタッフ重複チェックで再利用するデータ（`reservations.time_range`, `staff_id`）を取得するクエリやインデックスを確認し、複数スタッフ指定時の扱いを追記する。
+
+## availability コード再利用メモ
+
+- [ ] 再利用予定の関数を確認する — `src/features/availability/server.ts` の `buildCalendarContext`, `buildReservationContext`, `buildEquipmentAvailabilityContext`, `subtractIntervals`, `parsePgRange` などを共通化候補として列挙し、移動先モジュール案をまとめる。
+- [ ] 予約可能枠専用で不要になる処理を特定する — `listAvailability`, `buildCandidateSlotsForRooms`, `finalizeSlots`, `generateCandidateSlots` などを削除/分解する際の注意点（テスト影響・共有定数）をメモする。
+- [ ] 既存ファイルの型定義（`NormalizedAvailabilityInput`, `CandidateSlot` など）をどこまで流用するか判断し、残す/移す/破棄の方針と依存箇所を洗い出す。
