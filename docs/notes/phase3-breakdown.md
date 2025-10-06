@@ -6,7 +6,7 @@
 
 ## 手順リスト
 
-- [ ] API 仕様策定 — `POST /t/{tenantId}/reservations` の入出力とエラー規約を整理し、ドラフトを `docs/design/api-overview.md` に反映する。
+- [ ] API 仕様策定 — `POST /t/{tenantId}/reservations` の入出力とエラー規約を整理し、ドラフトを `docs/api/reservations.md` に反映する。
   - インプット: `docs/requirements.md`, `docs/db/schema.md`, `docs/notes/uc1-preconditions.md`。
   - 成果物: 主要パラメータ一覧、レスポンス例（成功／候補なし／409）、エラーコード定義、Idempotency 方針メモ。
   - 留意点: Server Action で実装する想定か REST 化するかを決め、認可と RLS の整合を確認する。
