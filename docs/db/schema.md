@@ -89,9 +89,9 @@ erDiagram
   - `customers`: 顧客。メール・電話は重複許容（ユースケース次第で将来制約）。`(tenant_id, id)` で一意。
   - `staff`: スタッフ。`profile_id` はテナント所属ユーザー必須。`(tenant_id, id)` で一意。
   - `reservations`: 予約。`time_range` 生成列＋ EXCLUDE 制約で「部屋 × 時間帯」の重複を DB で抑止。顧客・サービス・部屋・スタッフとは `(tenant_id, xxx_id)` の複合外部キーでテナント一致を保証。
-  - `reservation_equipment_items`: 予約と機材個体の多対多。個体×時間帯の EXCLUDE 制約で二重貸出を防止し、親予約と同じ `tenant_id` を保持する。
+  - `reservation_equipment_items`: 予約と機材個体の多対多。予約確定時にアプリが空いている個体を自動で選び登録する。個体×時間帯の EXCLUDE 制約で二重貸出を防止し、親予約と同じ `tenant_id` を保持する。
 - Exceptions / Logs
-  - `calendar_exceptions`: 休業/メンテ/私用などの例外時間帯（scope=tenant/room/equipment/staff）。
+  - `calendar_exceptions`: 休業/メンテ/私用などの例外時間帯（scope=tenant/room/equipment/staff）。`target_id` が NULL の場合は scope で指定したカテゴリ全体に適用する。
   - `messages`: 予約に紐づく運用メッセージ。`(tenant_id, reservation_id)` で親予約を参照する。
   - `audit_logs`: 監査ログ（だれが/なにを/いつ）。admin のみ参照。
 
@@ -123,11 +123,12 @@ sequenceDiagram
   App-->>User: 確認画面を提示
   User->>App: 確定
   App->>DB: INSERT reservations (status='confirmed')
-  App->>DB: INSERT reservation_equipment_items（割当個体）
+  App->>DB: 機材空き状況を検索し、自動割当する個体を決定
+  App->>DB: INSERT reservation_equipment_items（自動割当した個体）
   App->>DB: INSERT audit_logs（予約作成）
 ```
 - 重複防止: `reservations.time_range` + EXCLUDE 制約で DB が二重予約を抑止。
-- 在庫確認: 個体の空き状況を検索し、`reservation_equipment_items` の EXCLUDE 制約で DB が同時割当を拒否。
+- 在庫確認: 個体の空き状況を検索し、空き個体を自動選択して `reservation_equipment_items` へ登録。EXCLUDE 制約で DB が同時割当を拒否。
 
 ### 4) 予約変更/キャンセル
 - 変更: `reservations` を UPDATE。時間帯変更時は EXCLUDE により重複があれば失敗。

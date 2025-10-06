@@ -18,7 +18,7 @@ UI 実装は Next.js App Router（/t/:slug 配下）を前提とします。
 - `/t/:slug/reservations/calendar` カレンダー（`?view=week|day`）
 - `/t/:slug/reservations/new` 予約作成（モーダル/ドロワーでも可）
 - `/t/:slug/reservations/:id` 予約詳細（個体割当の確認/変更、ドロワー連携は要件 15.1）
-- `/t/:slug/availability` 可用枠検索（条件パネル＋結果）
+- `/t/:slug/availability` 予約可能枠検索（条件パネル＋結果）
 - `/t/:slug/inventory` 機材（SKU 一覧）
 - `/t/:slug/inventory/:sku` SKU 詳細（個体一覧と割当状況）
 - `/t/:slug/rooms` 部屋一覧
@@ -72,5 +72,5 @@ stateDiagram-v2
 
 ## 3. トレーサビリティ
 
-- 要件 2 章（ロール/RBAC）、7 章（競合/可用枠）、9.1.1（認証・権限の HTTP 規約）
-- E2E（S1）カバー対象: 予約 CRUD、可用枠検索、ロール別アクセス
+- 要件 2 章（ロール/RBAC）、7 章（競合/予約可能枠）、9.1.1（認証・権限の HTTP 規約）
+- E2E（S1）カバー対象: 予約 CRUD、予約可能枠検索、ロール別アクセス

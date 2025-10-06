@@ -16,7 +16,7 @@
 | `id` | `uuid` | ✔︎ | `gen_random_uuid()` | 例外ID | `primary key` |
 | `tenant_id` | `uuid` | ✔︎ |  | 所属テナント | `references tenants(id) on delete cascade` |
 | `scope` | `text` | ✔︎ |  | 適用範囲 | `check (scope in ('tenant','room','equipment','staff'))` |
-| `target_id` | `uuid` |  |  | 対象ID（scopeごと） |  |
+| `target_id` | `uuid` |  |  | 対象ID（scopeごと）。NULL の場合は `scope` で指定したカテゴリ全体に適用。 |  |
 | `range` | `tstzrange` | ✔︎ |  | 時間範囲 |  |
 | `type` | `text` | ✔︎ |  | 種別 | `check (type in ('holiday','maintenance','ooh','busy'))` |
 | `note` | `text` |  |  | 備考 |  |
@@ -38,4 +38,3 @@
 
 ## 作成 SQL（参照）
 - `supabase/migrations/0002_core.sql` を参照。
-

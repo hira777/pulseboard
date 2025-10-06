@@ -60,7 +60,7 @@ $$;
     on reservations using gist (time_range);
   ```
 
-  → 可用枠検索・重複予約チェックに利用。
+  → 予約可能枠検索・重複予約チェックに利用。
 
 - **高速検索用**
 
@@ -85,12 +85,14 @@ $$;
   ```
 
 - **個体管理**
+
   ```sql
   create index equipment_items_tenant_status_idx
     on equipment_items (tenant_id, status);
   ```
 
 - **個体割当の検索**
+
   ```sql
   create index reservation_equipment_items_reservation_idx
     on reservation_equipment_items (reservation_id);

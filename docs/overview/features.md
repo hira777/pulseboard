@@ -11,21 +11,21 @@
 
 - [S1][admin|member] KPI（当日/今週の予約数、稼働率の簡易指標）
 - [S1][admin|member] 最近の更新（直近 N 件）
-- [S1][admin|member] ショートカット（予約作成、可用枠検索 など）
+- [S1][admin|member] ショートカット（予約作成、予約可能枠検索 など）
 
 ## 2. 予約管理
 
 - [S1][admin|member] 予約の作成/変更/キャンセル/リスケ/担当者割当（ライフサイクル準拠）
 - [S1][admin|member] カレンダー（週/日）と一覧（高速スクロール）表示
-- [S1][admin|member] 競合検知（部屋/機材/営業時間/例外日）と理由表示（`requirements.md` 7章）
+- [S1][admin|member] 競合検知（部屋/機材/営業時間/例外日）と理由表示（`requirements.md` 7 章）
 - [S1][admin|member] 内部メモ／監査ログの参照
 - [S2][admin] 料金見積もり表示（ピーク/オフピーク、最低利用時間）
 
-## 3. 可用枠検索（listAvailability）
+## 3. 予約可能枠検索（listAvailability）
 
 - [S1][admin|member] 入力: 期間、サービス、部屋条件、必要機材（SKU: 数量）
 - [S1] 出力: 候補スロット（n≤50、開始/終了、割当可能な部屋/機材個体リスト、理由コード）
-- [S1] 判定順: 営業時間 → 例外日 → 部屋重複 → 機材個体の空き（EXCLUDE 制約で保証）→（任意）スタッフ（`requirements.md` 7章）
+- [S1] 判定順: 営業時間 → 例外日 → 部屋重複 → 機材個体の空き（EXCLUDE 制約で保証）→（任意）スタッフ（`requirements.md` 7 章）
 
 ## 4. 機材・在庫
 
@@ -44,7 +44,7 @@
 ## 6. 認証・権限・監査
 
 - [S1] Supabase JWT 認証（admin/member）
-- [S1] RLS と URL テナント境界（`/t/:slug`）、未権限=404・API/Actions=403（要件 2章, 9.1.1）
+- [S1] RLS と URL テナント境界（`/t/:slug`）、未権限=404・API/Actions=403（要件 2 章, 9.1.1）
 - [S1] 操作ログ（監査）と相関 ID 付与、エラー規約（Idempotency / If-Match / 409）
 
 ## 7. テレメトリ / 非機能（抜粋）
@@ -57,4 +57,4 @@
 ### 付記: 受け入れとのトレーサビリティ
 
 - `docs/requirements.md`「受け入れ基準（S1）」および `docs/roadmap.md` のフェーズにマッピング。
-- E2E（Playwright）対象: 予約 CRUD／可用枠検索／ロール別アクセス。
+- E2E（Playwright）対象: 予約 CRUD／予約可能枠検索／ロール別アクセス。
