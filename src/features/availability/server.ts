@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { extractTimezoneOffsetMinutes, minutesToMs } from '@/utils/time'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ZodError } from 'zod'
 
@@ -640,34 +641,6 @@ function finalizeSlots({
  */
 function buildPostgresRangeLiteral(from: ISODateTime, to: ISODateTime) {
   return `[${from},${to})`
-}
-
-/**
- * 分単位の値をミリ秒へ変換するユーティリティ。
- * @param minutes 変換対象の分数。
- * @returns ミリ秒換算の数値。
- */
-function minutesToMs(minutes: number) {
-  return minutes * 60_000
-}
-
-/**
- * ISO 8601 文字列の末尾からタイムゾーンオフセットを抽出する。
- * @param iso タイムゾーン付きの ISO 8601 文字列。
- * @returns 分単位のオフセット。UTC の場合は 0。
- */
-function extractTimezoneOffsetMinutes(iso: ISODateTime) {
-  if (iso.endsWith('Z')) {
-    return 0
-  }
-  const match = iso.match(/([+-])(\d{2}):(\d{2})$/)
-  if (!match) {
-    return 0
-  }
-  const sign = match[1] === '-' ? -1 : 1
-  const hours = Number.parseInt(match[2], 10)
-  const minutes = Number.parseInt(match[3], 10)
-  return sign * (hours * 60 + minutes)
 }
 
 /**
