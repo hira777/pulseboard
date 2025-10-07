@@ -1,5 +1,16 @@
-import { buildCalendarContext, parsePgRange } from '@/features/reservations/calendar'
+import { buildCalendarContext } from '@/features/reservations/calendar'
 import type { CalendarExceptionRecord, Interval } from '@/features/reservations/calendar'
+import {
+  buildReservationContext,
+  buildEquipmentAvailabilityContext,
+  createEmptyEquipmentContext,
+  checkEquipmentAvailability,
+  hasAnyOverlap,
+  ConflictQueryError,
+  type EquipmentAvailabilityContext,
+  type ReservationScheduleRecord,
+  type EquipmentRecord,
+} from '@/features/reservations/conflicts'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { extractTimezoneOffsetMinutes, minutesToMs } from '@/utils/time'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -88,30 +99,6 @@ type RoomRecord = {
   active: boolean
 }
 
-type ReservationRecord = {
-  room_id: string | null
-  staff_id: string | null
-  time_range: string | null
-}
-
-type EquipmentRecord = {
-  id: string
-  track_serial: boolean
-  stock: number
-  active: boolean
-}
-
-type EquipmentItemRecord = {
-  id: string
-  equipment_id: string
-  status: 'available' | 'repair' | 'lost'
-}
-
-type ReservationEquipmentItemRecord = {
-  equipment_item_id: string
-  reservation_time_range: string | null
-}
-
 // rooms.open_hours を曜日→時間リストにマッピングした型
 type RoomOpenHours = Partial<
   Record<
@@ -123,31 +110,14 @@ type RoomOpenHours = Partial<
   >
 >
 
-// 機材在庫チェックで再利用する情報のまとまり
-type EquipmentAvailabilityContext = {
-  equipmentById: Map<string, EquipmentRecord>
-  availableItemsByEquipmentId: Map<string, EquipmentItemRecord[]>
-  equipmentUsageByEquipmentId: Map<string, Interval[]>
-  equipmentUsageByItemId: Map<string, Interval[]>
-  equipmentExceptionsById: Map<string, Interval[]>
-}
-
 /**
  * Supabase から取得した可用枠判定用のデータ一式。
  */
 type AvailabilityData = {
   service: ServiceRecord
   rooms: RoomRecord[]
-  reservations: ReservationRecord[]
+  reservations: ReservationScheduleRecord[]
   calendarExceptions: CalendarExceptionRecord[]
-}
-
-/**
- * 予約データを整理したコンテキスト。
- */
-type ReservationContext = {
-  roomReservationIntervals: Map<string, Interval[]>
-  staffReservationIntervals: Interval[]
 }
 
 /**
@@ -251,15 +221,25 @@ export async function listAvailability(
   // - 機材条件がある場合のみ、SKU 情報／個体在庫／既存の貸出時間を集約したコンテキストを作成する。
   // - 条件に挙がった機材が存在しない・非アクティブな場合は 404 エラー。
   // - 機材条件が無い場合は、例外マップを保持した空コンテキストを作成する。
-  const equipmentContext = normalizedInput.wantedEquipments.length
-    ? await buildEquipmentAvailabilityContext({
+  let equipmentContext: EquipmentAvailabilityContext
+  if (normalizedInput.wantedEquipments.length) {
+    try {
+      equipmentContext = await buildEquipmentAvailabilityContext({
         supabase,
         tenantId: normalizedInput.tenantId,
         equipmentIds: normalizedInput.wantedEquipments.map((item) => item.equipmentId),
         rangeLiteral,
         equipmentExceptionsById: calendarContext.equipmentExceptionsById,
       })
-    : createEmptyEquipmentContext(calendarContext.equipmentExceptionsById)
+    } catch (error) {
+      if (error instanceof ConflictQueryError) {
+        throw new AvailabilityQueryError(error.resource, error.details)
+      }
+      throw error
+    }
+  } else {
+    equipmentContext = createEmptyEquipmentContext(calendarContext.equipmentExceptionsById)
+  }
 
   validateEquipmentAvailability(normalizedInput.wantedEquipments, equipmentContext.equipmentById)
 
@@ -373,7 +353,7 @@ async function fetchAvailabilityData({
     throw new AvailabilityQueryError('calendar_exceptions', calendarExceptionsResult.error)
   }
 
-  const reservations = (reservationsResult.data ?? []) as ReservationRecord[]
+  const reservations = (reservationsResult.data ?? []) as ReservationScheduleRecord[]
   const calendarExceptions = (calendarExceptionsResult.data ?? []) as CalendarExceptionRecord[]
 
   return {
@@ -384,37 +364,6 @@ async function fetchAvailabilityData({
   }
 }
 
-
-/**
- * 予約レコードから重複判定用のコンテキストを生成する。
- * @param reservations 対象期間の予約レコード。
- * @param staffId スタッフ重複判定で利用するスタッフ ID。
- * @returns 部屋・スタッフ用の占有レンジをまとめたコンテキスト。
- * @example
- * const context = buildReservationContext([
- *   { room_id: 'room-1', staff_id: 'staff-1', time_range: '[2025-10-01 09:00:00+09:00,2025-10-01 10:00:00+09:00)' },
- *   { room_id: 'room-1', staff_id: null, time_range: '[2025-10-01 11:00:00+09:00,2025-10-01 12:00:00+09:00)' },
- * ], 'staff-1')
- * 返却値の例:
- * {
- *   roomReservationIntervals: Map { 'room-1' => [
- *     { start: 2025-10-01T00:00:00.000Z, end: 2025-10-01T01:00:00.000Z },
- *     { start: 2025-10-01T02:00:00.000Z, end: 2025-10-01T03:00:00.000Z },
- *   ] },
- *   staffReservationIntervals: [
- *     { start: 2025-10-01T00:00:00.000Z, end: 2025-10-01T01:00:00.000Z }
- *   ]
- * }
- */
-function buildReservationContext(
-  reservations: ReservationRecord[],
-  staffId?: string,
-): ReservationContext {
-  return {
-    roomReservationIntervals: buildRoomReservationMap(reservations),
-    staffReservationIntervals: buildStaffReservationList(reservations, staffId),
-  }
-}
 
 /**
  * 各部屋の営業時間・例外・既存予約を考慮した候補スロットを生成する。
@@ -493,23 +442,6 @@ function buildCandidateSlotsForRooms({
 
   candidateSlots.sort((a, b) => a.start - b.start)
   return candidateSlots
-}
-
-/**
- * 機材条件が無い場合に利用する空のコンテキストを生成する。
- * @param equipmentExceptionsById 機材ごとの例外区間マップ。
- * @returns 空の機材コンテキスト。
- */
-function createEmptyEquipmentContext(
-  equipmentExceptionsById: Map<string, Interval[]>,
-): EquipmentAvailabilityContext {
-  return {
-    equipmentById: new Map(),
-    availableItemsByEquipmentId: new Map(),
-    equipmentUsageByEquipmentId: new Map(),
-    equipmentUsageByItemId: new Map(),
-    equipmentExceptionsById,
-  }
 }
 
 /**
@@ -886,178 +818,6 @@ function formatIsoWithOffset(epochMs: number, offsetMinutes: number): ISODateTim
     )}:${pad(seconds)}` + `${sign}${pad(offsetHours)}:${pad(offsetMins)}`
   )
 }
-
-
-
-/**
- * 部屋ごとの予約占有区間をマッピングし、重複判定に使いやすくする。
- * @param records 対象期間と状態で取得した予約レコード。
- * @returns room_id ごとの占有区間リスト。
- */
-function buildRoomReservationMap(records: ReservationRecord[]) {
-  const map = new Map<string, Interval[]>()
-  for (const record of records) {
-    if (!record.room_id || !record.time_range) {
-      continue
-    }
-    const interval = parsePgRange(record.time_range)
-    if (!interval) {
-      continue
-    }
-    const list = map.get(record.room_id) ?? []
-    list.push(interval)
-    map.set(record.room_id, list)
-  }
-  map.forEach((intervals, key) => {
-    intervals.sort((a, b) => a.start - b.start)
-    map.set(key, intervals)
-  })
-  return map
-}
-
-/**
- * 指定スタッフの占有レンジ一覧を作成し、重複チェックに利用する。
- * @param records 対象期間の予約レコード。
- * @param staffId チェック対象のスタッフ ID。未指定なら空配列を返す。
- * @returns スタッフが占有している時間帯のリスト。
- */
-function buildStaffReservationList(records: ReservationRecord[], staffId?: string): Interval[] {
-  if (!staffId) {
-    return []
-  }
-  const intervals: Interval[] = []
-  for (const record of records) {
-    if (record.staff_id !== staffId || !record.time_range) {
-      continue
-    }
-    const interval = parsePgRange(record.time_range)
-    if (interval) {
-      intervals.push(interval)
-    }
-  }
-  intervals.sort((a, b) => a.start - b.start)
-  return intervals
-}
-
-/**
- * 与えられた区間群のいずれかと衝突するかを判定する。
- * @param intervals 判定対象の区間配列。
- * @param start 判定したい開始時刻（ミリ秒）。
- * @param end 判定したい終了時刻（ミリ秒）。
- * @returns 重なりがあれば true。
- */
-function hasAnyOverlap(intervals: Interval[], start: number, end: number): boolean {
-  for (const interval of intervals) {
-    if (interval.start < end && start < interval.end) {
-      return true
-    }
-  }
-  return false
-}
-
-/**
- * 機材 SKU と個体の利用状況を取得し、在庫判定用コンテキストを構築する。
- * @param params.supabase 取得に使用する Supabase クライアント。
- * @param params.tenantId 対象テナント ID。
- * @param params.equipmentIds 希望された機材 ID の配列。
- * @param params.rangeLiteral 可用枠検索期間の tstzrange 文字列。
- * @param params.equipmentExceptionsById SKU ごとの例外区間マップ。
- * @returns 機材在庫判定に必要な情報をまとめたコンテキスト。
- */
-async function buildEquipmentAvailabilityContext({
-  supabase,
-  tenantId,
-  equipmentIds,
-  rangeLiteral,
-  equipmentExceptionsById,
-}: {
-  supabase: SupabaseClient
-  tenantId: string
-  equipmentIds: string[]
-  rangeLiteral: string
-  equipmentExceptionsById: Map<string, Interval[]>
-}): Promise<EquipmentAvailabilityContext> {
-  const [equipmentsResult, equipmentItemsResult, equipmentUsageResult] = await Promise.all([
-    supabase
-      .from('equipments')
-      .select('id,track_serial,stock,active')
-      .eq('tenant_id', tenantId)
-      .in('id', equipmentIds),
-    supabase
-      .from('equipment_items')
-      .select('id,equipment_id,status')
-      .eq('tenant_id', tenantId)
-      .in('equipment_id', equipmentIds),
-    supabase
-      .from('reservation_equipment_items')
-      .select('equipment_item_id,reservation_time_range')
-      .eq('tenant_id', tenantId)
-      .not('reservation_time_range', 'is', null)
-      .overlaps('reservation_time_range', rangeLiteral),
-  ])
-
-  if (equipmentsResult.error) {
-    throw new AvailabilityQueryError('equipments', equipmentsResult.error)
-  }
-  if (equipmentItemsResult.error) {
-    throw new AvailabilityQueryError('equipment_items', equipmentItemsResult.error)
-  }
-  if (equipmentUsageResult.error) {
-    throw new AvailabilityQueryError('reservation_equipment_items', equipmentUsageResult.error)
-  }
-
-  const equipmentById = new Map<string, EquipmentRecord>()
-  const equipmentData = (equipmentsResult.data ?? []) as EquipmentRecord[]
-  for (const equipment of equipmentData) {
-    equipmentById.set(equipment.id, equipment)
-  }
-
-  const availableItemsByEquipmentId = new Map<string, EquipmentItemRecord[]>()
-  const equipmentItemById = new Map<string, EquipmentItemRecord>()
-  const equipmentItemsData = (equipmentItemsResult.data ?? []) as EquipmentItemRecord[]
-  for (const item of equipmentItemsData) {
-    equipmentItemById.set(item.id, item)
-    if (item.status !== 'available') {
-      continue
-    }
-    const list = availableItemsByEquipmentId.get(item.equipment_id) ?? []
-    list.push(item)
-    availableItemsByEquipmentId.set(item.equipment_id, list)
-  }
-
-  const equipmentUsageByItemId = new Map<string, Interval[]>()
-  const equipmentUsageByEquipmentId = new Map<string, Interval[]>()
-
-  const equipmentUsageData = (equipmentUsageResult.data ?? []) as ReservationEquipmentItemRecord[]
-  for (const record of equipmentUsageData) {
-    const item = equipmentItemById.get(record.equipment_item_id)
-    if (!item) {
-      continue
-    }
-    const interval = record.reservation_time_range
-      ? parsePgRange(record.reservation_time_range)
-      : null
-    if (!interval) {
-      continue
-    }
-    const itemList = equipmentUsageByItemId.get(item.id) ?? []
-    itemList.push(interval)
-    equipmentUsageByItemId.set(item.id, itemList)
-
-    const equipmentList = equipmentUsageByEquipmentId.get(item.equipment_id) ?? []
-    equipmentList.push(interval)
-    equipmentUsageByEquipmentId.set(item.equipment_id, equipmentList)
-  }
-
-  return {
-    equipmentById,
-    availableItemsByEquipmentId,
-    equipmentUsageByEquipmentId,
-    equipmentUsageByItemId,
-    equipmentExceptionsById,
-  }
-}
-
 /**
  * 希望機材が存在し、アクティブであるかを事前に確認する。
  * @param wantedEquipments ユーザーが要求した機材条件。
@@ -1073,70 +833,4 @@ function validateEquipmentAvailability(
       throw new AvailabilityResourceNotFoundError('equipment')
     }
   }
-}
-
-/**
- * 候補スロットで要求数量の機材を確保できるか判定する。
- * @param wantedEquipments ユーザーが要求した機材条件。
- * @param candidate 判定対象の候補スロット。
- * @param context 在庫・利用状況を格納したコンテキスト。
- * @returns 要求数を満たせる場合は true。
- */
-function checkEquipmentAvailability(
-  wantedEquipments: WantedEquipment[],
-  candidate: CandidateSlot,
-  context: EquipmentAvailabilityContext,
-) {
-  if (!wantedEquipments.length) {
-    return true
-  }
-
-  for (const wanted of wantedEquipments) {
-    const equipment = context.equipmentById.get(wanted.equipmentId)
-    if (!equipment) {
-      return false
-    }
-
-    const exceptions = context.equipmentExceptionsById.get(wanted.equipmentId) ?? []
-    if (hasAnyOverlap(exceptions, candidate.occupiedStart, candidate.occupiedEnd)) {
-      return false
-    }
-
-    const availableItems = context.availableItemsByEquipmentId.get(wanted.equipmentId) ?? []
-    const capacityFromItems = availableItems.length
-    const capacityFromStock = equipment.stock ?? 0
-    const capacity = Math.max(capacityFromItems, capacityFromStock)
-
-    if (capacity === 0) {
-      return false
-    }
-
-    let busyCount = 0
-    if (availableItems.length) {
-      for (const item of availableItems) {
-        const usage = context.equipmentUsageByItemId.get(item.id) ?? []
-        if (
-          usage.some(
-            (interval) =>
-              interval.start < candidate.occupiedEnd && candidate.occupiedStart < interval.end,
-          )
-        ) {
-          busyCount += 1
-        }
-      }
-    } else {
-      const usage = context.equipmentUsageByEquipmentId.get(wanted.equipmentId) ?? []
-      busyCount = usage.filter(
-        (interval) =>
-          interval.start < candidate.occupiedEnd && candidate.occupiedStart < interval.end,
-      ).length
-    }
-
-    const availableUnits = capacity - busyCount
-    if (availableUnits < wanted.qty) {
-      return false
-    }
-  }
-
-  return true
 }
