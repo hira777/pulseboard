@@ -11,7 +11,7 @@ describe('validateReservationInput のバリデーション', () => {
     endAt: '2025-10-05T11:00:00+09:00',
   }
 
-  it('正常な入力なら正規化されたコマンドを返す', () => {
+  it('正常な入力なら正規化されたペイロードを返す', () => {
     const result = validateReservationInput({
       ...baseInput,
       serviceId: 'service-1',

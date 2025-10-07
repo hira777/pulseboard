@@ -1,3 +1,5 @@
+import { buildCalendarContext, parsePgRange } from '@/features/reservations/calendar'
+import type { CalendarExceptionRecord, Interval } from '@/features/reservations/calendar'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { extractTimezoneOffsetMinutes, minutesToMs } from '@/utils/time'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -64,12 +66,6 @@ export type NormalizedAvailabilityInput = Omit<
   wantedEquipments: WantedEquipment[]
 }
 
-// 開始・終了ミリ秒で表す時間区間
-type Interval = {
-  start: number
-  end: number
-}
-
 // roomId とバッファ込みの占有範囲を持つ候補スロット
 type CandidateSlot = {
   roomId: string
@@ -96,12 +92,6 @@ type ReservationRecord = {
   room_id: string | null
   staff_id: string | null
   time_range: string | null
-}
-
-type CalendarExceptionRecord = {
-  scope: 'tenant' | 'room' | 'equipment' | 'staff'
-  target_id: string | null
-  range: string
 }
 
 type EquipmentRecord = {
@@ -150,16 +140,6 @@ type AvailabilityData = {
   rooms: RoomRecord[]
   reservations: ReservationRecord[]
   calendarExceptions: CalendarExceptionRecord[]
-}
-
-/**
- * カレンダー例外を整理したコンテキスト。
- */
-type CalendarContext = {
-  tenantExceptions: Interval[]
-  roomExceptionsById: Map<string, Interval[]>
-  staffExceptionsById: Map<string, Interval[]>
-  equipmentExceptionsById: Map<string, Interval[]>
 }
 
 /**
@@ -404,38 +384,6 @@ async function fetchAvailabilityData({
   }
 }
 
-/**
- * 例外レコードをテナント・部屋・スタッフ・機材単位に整理する。
- * @param calendarExceptions カレンダー例外のレコード配列。
- * @returns 整理済みの例外コンテキスト。
- * @example
- * const context = buildCalendarContext([
- *   { scope: 'tenant', target_id: null, range: '[2025-10-01T00:00:00+09:00,2025-10-02T00:00:00+09:00)' },
- *   { scope: 'room', target_id: 'room-1', range: '[2025-10-01T12:00:00+09:00,2025-10-01T14:00:00+09:00)' },
- * ])
- * 返却値の例:
- * {
- *   tenantExceptions: [{ start: 2025-09-30T15:00:00.000Z, end: 2025-10-01T15:00:00.000Z }],
- *   roomExceptionsById: Map { 'room-1' => [{ start: 2025-10-01T03:00:00.000Z, end: 2025-10-01T05:00:00.000Z }] },
- *   staffExceptionsById: Map {},
- *   equipmentExceptionsById: Map {}
- * }
- */
-function buildCalendarContext(calendarExceptions: CalendarExceptionRecord[]): CalendarContext {
-  const tenantExceptions = intervalsFromRecords(
-    calendarExceptions.filter((exception) => exception.scope === 'tenant'),
-  )
-  const roomExceptionsById = groupIntervalsByTarget(calendarExceptions, 'room')
-  const staffExceptionsById = groupIntervalsByTarget(calendarExceptions, 'staff')
-  const equipmentExceptionsById = groupIntervalsByTarget(calendarExceptions, 'equipment')
-
-  return {
-    tenantExceptions,
-    roomExceptionsById,
-    staffExceptionsById,
-    equipmentExceptionsById,
-  }
-}
 
 /**
  * 予約レコードから重複判定用のコンテキストを生成する。
@@ -939,79 +887,7 @@ function formatIsoWithOffset(epochMs: number, offsetMinutes: number): ISODateTim
   )
 }
 
-/**
- * PostgreSQL の range 文字列を Interval に変換する。
- * @param range tstzrange 形式の文字列。
- * @returns Interval 変換結果。パースできない場合は null。
- */
-function parsePgRange(range: string): Interval | null {
-  if (!range) {
-    return null
-  }
-  const match = range.match(/^([\[(])([^,]*),([^,\)]*)([)\]])$/)
-  if (!match) {
-    return null
-  }
-  const startInclusive = match[1] === '['
-  const endInclusive = match[4] === ']'
-  const startStr = match[2].trim()
-  const endStr = match[3].trim()
-  if (!startStr || !endStr) {
-    return null
-  }
-  let start = Date.parse(startStr)
-  let end = Date.parse(endStr)
-  if (Number.isNaN(start) || Number.isNaN(end)) {
-    return null
-  }
-  if (!startInclusive) {
-    start += 1
-  }
-  if (endInclusive) {
-    end += 1
-  }
-  if (start >= end) {
-    return null
-  }
-  return { start, end }
-}
 
-/**
- * calendar_exceptions のレコード群を Interval 配列に変換する。
- * @param records Supabase から取得した例外レコード。
- * @returns 例外時間帯の配列。
- */
-function intervalsFromRecords(records: CalendarExceptionRecord[]) {
-  return records
-    .map((record) => parsePgRange(record.range))
-    .filter((interval): interval is Interval => Boolean(interval))
-}
-
-/**
- * scope ごとに target_id をキーとして区間をグルーピングする。
- * @param records 例外レコードの配列。
- * @param scope 抽出対象のスコープ種類。
- * @returns target_id ごとにまとめた区間マップ。
- */
-function groupIntervalsByTarget(
-  records: CalendarExceptionRecord[],
-  scope: CalendarExceptionRecord['scope'],
-) {
-  const map = new Map<string, Interval[]>()
-  for (const record of records) {
-    if (record.scope !== scope || !record.target_id) {
-      continue
-    }
-    const interval = parsePgRange(record.range)
-    if (!interval) {
-      continue
-    }
-    const list = map.get(record.target_id) ?? []
-    list.push(interval)
-    map.set(record.target_id, list)
-  }
-  return map
-}
 
 /**
  * 部屋ごとの予約占有区間をマッピングし、重複判定に使いやすくする。
