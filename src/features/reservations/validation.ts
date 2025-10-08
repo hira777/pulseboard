@@ -136,6 +136,7 @@ export type ValidationIssue = {
 
 export class ReservationValidationError extends Error {
   readonly code = 'RESERVATIONS_VALIDATION_FAILED'
+  readonly status = 422
   constructor(public readonly issues: ValidationIssue[]) {
     super('Reservation validation failed')
     this.name = 'ReservationValidationError'
